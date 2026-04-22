@@ -875,9 +875,10 @@ body::before {
         <div style="height:6px;background:var(--bg-2);border-radius:999px;overflow:hidden;">
           <div id="task-progress-bar" style="height:100%;background:var(--lime);border-radius:999px;width:0%;transition:width 0.4s;"></div>
         </div>
+        <div id="task-plan-info" style="margin-top:10px;font-size:12px;color:var(--text-3);"></div>
       </div>
       <div id="tasks-list">
-        <div class="empty"><div class="empty-icon">📭</div><div class="empty-text">No tasks available yet.<br/>Check back soon — admin is preparing tasks.</div></div>
+        <div class="empty"><div class="spinner" style="margin:0 auto;"></div></div>
       </div>
     </div>
 
@@ -1026,6 +1027,32 @@ body::before {
   </nav>
 </div>
 
+<!-- Task Modal -->
+<div id="task-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeTaskModal()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <div class="modal-title" id="tm-title">—</div>
+      <div style="font-family:'DM Mono',monospace;font-weight:700;color:var(--green);" id="tm-reward">—</div>
+    </div>
+    <p class="modal-sub" id="tm-desc">—</p>
+    <div id="tm-alert" class="alert alert-error hidden"></div>
+
+    <div id="tm-embed" style="margin-bottom:14px;"></div>
+    <a id="tm-external" href="#" target="_blank" rel="noopener" class="btn btn-secondary btn-full btn-sm hidden" style="margin-bottom:14px;">Open link</a>
+
+    <div class="card" style="padding:12px;display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--lime-dim);display:flex;align-items:center;justify-content:center;color:var(--lime);font-family:'DM Mono',monospace;font-weight:600;font-size:13px;" id="tm-timer-text">—</div>
+      <div style="font-size:12px;color:var(--text-2);line-height:1.5;">Watch/read the content. The claim button unlocks when the timer ends.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;">
+      <button class="btn btn-secondary" onclick="closeTaskModal()">Cancel</button>
+      <button class="btn btn-primary" id="tm-claim-btn" disabled onclick="claimTaskReward()">Wait to claim</button>
+    </div>
+  </div>
+</div>
+
 <!-- Vault Purchase Confirmation Modal -->
 <div id="vault-purchase-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeVaultPurchaseModal()">
   <div class="modal-sheet">
@@ -1105,6 +1132,7 @@ function showSection(id) {
 
   // Load section data
   if (id === 'vault')     loadVaultPlans();
+  if (id === 'tasks')     loadTasks();
   if (id === 'referrals') loadReferrals();
   if (id === 'wallet')    loadHistory();
   if (id === 'profile')   loadProfileView();
@@ -1502,6 +1530,194 @@ async function submitVaultPurchase(planId) {
     setLoading(btn, false, 'Try Again');
     showAlert(alert, 'Network error');
   }
+}
+
+// ════════════════════════════════════════════════════════════
+//  TASKS
+// ════════════════════════════════════════════════════════════
+let activeTaskTimer = null;
+
+async function loadTasks() {
+  const list = document.getElementById('tasks-list');
+  const alertEl = document.getElementById('tasks-alert');
+  hideAlert(alertEl);
+
+  // Plan gating info
+  const plan = vaultPlansCache?.find(p => p.id === currentProfile?.vault_plan_id) || { tasks_per_day: 0, sort_order: 0, display_name: 'None', emoji: '' };
+
+  // Early bird expiry check on frontend (backend also enforces)
+  if (currentProfile?.vault_plan_id === 'early_bird' && currentProfile?.early_bird_expires_at) {
+    if (new Date(currentProfile.early_bird_expires_at) < new Date()) {
+      showAlert(alertEl, 'Your Early Bird has expired. Upgrade to a vault plan to keep earning.');
+    }
+  }
+
+  // Count today's completions
+  const startToday = startOfTodayISO();
+  const { count: doneToday } = await sb
+    .from('task_completions')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', currentUser.id)
+    .gte('completed_at', startToday);
+
+  const total = plan.tasks_per_day;
+  const done = doneToday || 0;
+  const pct = total ? Math.min(100, (done / total) * 100) : 0;
+  document.getElementById('task-progress-text').textContent = `${done} / ${total}`;
+  document.getElementById('task-progress-bar').style.width = pct + '%';
+  document.getElementById('task-plan-info').textContent = `Plan: ${plan.emoji || ''} ${plan.display_name} · ${total} task${total === 1 ? '' : 's'}/day`;
+
+  // Which tasks has user done today
+  const { data: doneRows } = await sb
+    .from('task_completions')
+    .select('task_id')
+    .eq('user_id', currentUser.id)
+    .gte('completed_at', startToday);
+  const doneSet = new Set((doneRows || []).map(r => r.task_id));
+
+  // Fetch active tasks
+  const { data: tasks } = await sb.from('tasks').select('*').eq('is_active', true).order('created_at');
+
+  if (!tasks || tasks.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">No tasks yet. Check back soon.</div></div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  tasks.forEach(t => {
+    const isDone   = doneSet.has(t.id);
+    const locked   = plan.sort_order < t.min_plan_order;
+    const reachedLimit = done >= total && !isDone;
+
+    const typeEmoji = { youtube: '📺', read: '📖', tiktok: '🎵', subscribe: '🔔' }[t.task_type] || '✅';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.padding = '0';
+    card.style.overflow = 'hidden';
+
+    let btn = '';
+    if (isDone) {
+      btn = '<button class="btn btn-secondary btn-full btn-sm" disabled>✓ Completed today</button>';
+    } else if (locked) {
+      btn = '<button class="btn btn-secondary btn-full btn-sm" disabled>🔒 Upgrade plan to unlock</button>';
+    } else if (reachedLimit) {
+      btn = '<button class="btn btn-secondary btn-full btn-sm" disabled>Daily limit reached</button>';
+    } else {
+      btn = `<button class="btn btn-primary btn-full btn-sm" onclick='openTaskModal(${JSON.stringify(t)})'>Start Task · +UGX ${t.reward.toLocaleString()}</button>`;
+    }
+
+    card.innerHTML = `
+      <div style="padding:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px;">
+          <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;">
+            <span>${typeEmoji}</span><span>${escapeHtml(t.title)}</span>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-weight:700;color:var(--green);font-size:13px;white-space:nowrap;">+${t.reward.toLocaleString()}</div>
+        </div>
+        ${t.description ? `<div style="font-size:12px;color:var(--text-2);margin-bottom:10px;line-height:1.5;">${escapeHtml(t.description)}</div>` : ''}
+        <div style="margin-top:10px;">${btn}</div>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function openTaskModal(task) {
+  const modal = document.getElementById('task-modal');
+  const typeEmoji = { youtube: '📺', read: '📖', tiktok: '🎵', subscribe: '🔔' }[task.task_type] || '✅';
+  document.getElementById('tm-title').textContent = `${typeEmoji} ${task.title}`;
+  document.getElementById('tm-reward').textContent = `+UGX ${task.reward.toLocaleString()}`;
+  document.getElementById('tm-desc').textContent = task.description || '';
+
+  const embedEl = document.getElementById('tm-embed');
+  const linkEl  = document.getElementById('tm-external');
+  embedEl.innerHTML = '';
+  linkEl.classList.add('hidden');
+
+  if (task.task_type === 'youtube' && task.url) {
+    embedEl.innerHTML = `<iframe src="${task.url}" allow="encrypted-media" style="width:100%;aspect-ratio:16/9;border:none;border-radius:12px;background:#000;"></iframe>`;
+  } else if (task.task_type === 'read') {
+    embedEl.innerHTML = `
+      <div style="background:var(--bg-2);border-radius:12px;padding:16px;font-size:13px;line-height:1.7;color:var(--text-2);max-height:200px;overflow-y:auto;">
+        <p style="margin-bottom:10px;">Read this article carefully. The timer will run for ${task.duration_sec}s — the claim button unlocks when the timer ends.</p>
+        <p style="margin-bottom:10px;">Mobile money in Uganda is a digital payment system allowing users to send and receive money using their phones. MTN MoMo and Airtel Money are the two biggest providers…</p>
+        <p>${escapeHtml(task.description || '')}</p>
+      </div>`;
+  } else if (task.url) {
+    linkEl.href = task.url;
+    linkEl.classList.remove('hidden');
+  }
+
+  // Reset timer
+  const claimBtn = document.getElementById('tm-claim-btn');
+  claimBtn.disabled = true;
+  claimBtn.dataset.taskId = task.id;
+  const counter = document.getElementById('tm-timer-text');
+  let secs = task.duration_sec;
+  counter.textContent = `${secs}s`;
+  claimBtn.textContent = `Wait ${secs}s to claim`;
+  clearInterval(activeTaskTimer);
+  activeTaskTimer = setInterval(() => {
+    secs--;
+    counter.textContent = `${secs}s`;
+    claimBtn.textContent = `Wait ${secs}s to claim`;
+    if (secs <= 0) {
+      clearInterval(activeTaskTimer);
+      claimBtn.disabled = false;
+      claimBtn.textContent = `Claim +UGX ${task.reward.toLocaleString()}`;
+    }
+  }, 1000);
+
+  hideAlert(document.getElementById('tm-alert'));
+  modal.classList.remove('hidden');
+}
+
+function closeTaskModal() {
+  clearInterval(activeTaskTimer);
+  document.getElementById('task-modal').classList.add('hidden');
+  document.getElementById('tm-embed').innerHTML = '';
+}
+
+async function claimTaskReward() {
+  const btn = document.getElementById('tm-claim-btn');
+  const alertEl = document.getElementById('tm-alert');
+  hideAlert(alertEl);
+  const taskId = btn.dataset.taskId;
+  if (!taskId) return;
+  setLoading(btn, true, 'Claiming…');
+  const { data: { session } } = await sb.auth.getSession();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/complete-task`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
+      body: JSON.stringify({ task_id: taskId }),
+    });
+    const result = await res.json();
+    if (!result.success) {
+      setLoading(btn, false, 'Try again');
+      showAlert(alertEl, result.error || 'Claim failed');
+      return;
+    }
+    closeTaskModal();
+    toast(`+UGX ${result.reward.toLocaleString()} earned! ${result.remaining} task${result.remaining === 1 ? '' : 's'} left today.`, 'success');
+    await loadProfileAndRoute();
+    if (document.getElementById('section-tasks').classList.contains('active')) loadTasks();
+  } catch {
+    setLoading(btn, false, 'Try again');
+    showAlert(alertEl, 'Network error');
+  }
+}
+
+function startOfTodayISO() {
+  // Africa/Kampala = UTC+3. Match the backend logic.
+  const now = new Date();
+  const kamp = new Date(now.getTime() + 3 * 3600 * 1000);
+  kamp.setUTCHours(0, 0, 0, 0);
+  return new Date(kamp.getTime() - 3 * 3600 * 1000).toISOString();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
 // ════════════════════════════════════════════════════════════
