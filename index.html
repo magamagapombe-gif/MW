@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MW — Earn While You Share</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════ */
+:root {
+  --bg:          #07100D;
+  --bg-2:        #0C1A14;
+  --surface:     #111E18;
+  --surface-2:   #162419;
+  --border:      rgba(170,255,69,0.12);
+  --border-2:    rgba(255,255,255,0.06);
+  --lime:        #AAFF45;
+  --lime-dim:    rgba(170,255,69,0.15);
+  --lime-glow:   rgba(170,255,69,0.35);
+  --text:        #E0EBE5;
+  --text-2:      rgba(224,235,229,0.6);
+  --text-3:      rgba(224,235,229,0.35);
+  --error:       #FF6B6B;
+  --error-dim:   rgba(255,107,107,0.15);
+  --gold:        #FFD166;
+  --gold-dim:    rgba(255,209,102,0.15);
+  --radius:      14px;
+  --radius-lg:   20px;
+  --radius-xl:   28px;
+}
+
+/* ═══════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+a { color: var(--lime); text-decoration: none; }
+button { cursor: pointer; font-family: inherit; border: none; outline: none; }
+input, select, textarea { font-family: inherit; }
+::selection { background: var(--lime-glow); color: #000; }
+
+/* ═══════════════════════════════════════════════
+   SCROLLBAR
+═══════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+/* ═══════════════════════════════════════════════
+   PAGE SYSTEM
+═══════════════════════════════════════════════ */
+.page { display: none; min-height: 100vh; animation: fadeSlideIn 0.35s ease; }
+.page.active { display: flex; flex-direction: column; }
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════
+   SHARED COMPONENTS
+═══════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 28px; border-radius: var(--radius); font-size: 15px; font-weight: 600;
+  transition: all 0.2s ease; position: relative; overflow: hidden;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  background: var(--lime); color: #0A1A0F;
+  box-shadow: 0 0 30px var(--lime-glow);
+}
+.btn-primary:hover { background: #BFFF66; box-shadow: 0 0 45px var(--lime-glow); }
+.btn-secondary {
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border-2);
+}
+.btn-secondary:hover { border-color: var(--lime); color: var(--lime); }
+.btn-ghost { background: var(--lime-dim); color: var(--lime); }
+.btn-ghost:hover { background: rgba(170,255,69,0.22); }
+.btn-danger { background: var(--error-dim); color: var(--error); }
+.btn-danger:hover { background: rgba(255,107,107,0.25); }
+.btn:disabled { opacity: 0.45; pointer-events: none; }
+.btn-full { width: 100%; }
+.btn-sm { padding: 9px 18px; font-size: 13px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+.card-glow {
+  border-color: var(--border);
+  box-shadow: 0 0 40px rgba(170,255,69,0.05), inset 0 1px 0 rgba(170,255,69,0.08);
+}
+
+.input-group { display: flex; flex-direction: column; gap: 6px; }
+.input-label { font-size: 13px; font-weight: 500; color: var(--text-2); }
+.input-field {
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  color: var(--text); border-radius: var(--radius);
+  padding: 13px 16px; font-size: 15px; width: 100%;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-field:focus { outline: none; border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-dim); }
+.input-field::placeholder { color: var(--text-3); }
+.input-field.error { border-color: var(--error); box-shadow: 0 0 0 3px var(--error-dim); }
+
+.select-field {
+  background: var(--bg-2); border: 1px solid var(--border-2);
+  color: var(--text); border-radius: var(--radius);
+  padding: 13px 16px; font-size: 15px; width: 100%;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B9980' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center;
+  cursor: pointer; transition: border-color 0.2s;
+}
+.select-field:focus { outline: none; border-color: var(--lime); box-shadow: 0 0 0 3px var(--lime-dim); }
+.select-field option { background: #111E18; }
+
+.alert {
+  padding: 12px 16px; border-radius: var(--radius);
+  font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 10px;
+}
+.alert-error { background: var(--error-dim); border: 1px solid rgba(255,107,107,0.3); color: var(--error); }
+.alert-success { background: var(--lime-dim); border: 1px solid rgba(170,255,69,0.3); color: var(--lime); }
+.alert-info { background: var(--gold-dim); border: 1px solid rgba(255,209,102,0.3); color: var(--gold); }
+.hidden { display: none !important; }
+
+/* Spinner */
+.spinner { width: 20px; height: 20px; border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--lime); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Badge */
+.badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+.badge-lime { background: var(--lime-dim); color: var(--lime); }
+.badge-gold { background: var(--gold-dim); color: var(--gold); }
+.badge-gray { background: rgba(255,255,255,0.06); color: var(--text-2); }
+.badge-red  { background: var(--error-dim); color: var(--error); }
+
+/* ═══════════════════════════════════════════════
+   HEADER / NAV
+═══════════════════════════════════════════════ */
+.nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 24px; position: sticky; top: 0; z-index: 100;
+  background: rgba(7,16,13,0.85); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-2);
+}
+.nav-logo {
+  font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 800;
+  color: var(--lime); letter-spacing: -0.5px;
+}
+.nav-logo span { color: var(--text); opacity: 0.6; font-weight: 400; font-size: 13px; margin-left: 4px; }
+.nav-actions { display: flex; gap: 10px; align-items: center; }
+
+/* ═══════════════════════════════════════════════
+   PAGE: LANDING
+═══════════════════════════════════════════════ */
+#page-landing {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% -10%, rgba(170,255,69,0.07), transparent),
+    radial-gradient(ellipse 40% 40% at 80% 60%, rgba(0,200,100,0.04), transparent),
+    var(--bg);
+}
+
+.hero {
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 80px 24px 60px; max-width: 680px; margin: 0 auto;
+}
+.hero-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--lime-dim); border: 1px solid var(--border);
+  border-radius: 99px; padding: 6px 14px;
+  font-size: 12px; font-weight: 600; color: var(--lime); letter-spacing: 0.5px;
+  text-transform: uppercase; margin-bottom: 28px;
+}
+.hero-eyebrow::before { content: ''; width: 7px; height: 7px; background: var(--lime); border-radius: 50%; animation: pulse-dot 2s ease infinite; }
+@keyframes pulse-dot { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.5; transform:scale(1.5); } }
+
+.hero-title {
+  font-family: 'Sora', sans-serif; font-size: clamp(36px,7vw,64px);
+  font-weight: 800; line-height: 1.1; letter-spacing: -2px;
+  color: var(--text); margin-bottom: 20px;
+}
+.hero-title .accent { color: var(--lime); }
+.hero-sub {
+  font-size: 18px; color: var(--text-2); line-height: 1.7;
+  max-width: 480px; margin-bottom: 40px;
+}
+.hero-cta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+.hero-stats {
+  display: flex; gap: 0; margin: 60px 0 0;
+  border: 1px solid var(--border-2); border-radius: var(--radius-lg);
+  overflow: hidden; width: 100%; max-width: 480px;
+}
+.stat-item {
+  flex: 1; padding: 20px 16px; text-align: center;
+  border-right: 1px solid var(--border-2);
+}
+.stat-item:last-child { border-right: none; }
+.stat-num { font-family: 'Sora', sans-serif; font-size: 26px; font-weight: 700; color: var(--lime); }
+.stat-label { font-size: 12px; color: var(--text-3); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+.features {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px; padding: 0 24px 60px; max-width: 900px; margin: 0 auto; width: 100%;
+}
+.feature-card {
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg); padding: 24px;
+  transition: border-color 0.2s, transform 0.2s;
+}
+.feature-card:hover { border-color: var(--border); transform: translateY(-3px); }
+.feature-icon {
+  width: 44px; height: 44px; background: var(--lime-dim); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; margin-bottom: 16px;
+}
+.feature-title { font-family: 'Sora', sans-serif; font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+.feature-desc { font-size: 14px; color: var(--text-2); line-height: 1.6; }
+
+.how-it-works {
+  padding: 40px 24px 80px; max-width: 640px; margin: 0 auto; width: 100%; text-align: center;
+}
+.section-title { font-family: 'Sora', sans-serif; font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+.section-sub { color: var(--text-2); font-size: 16px; margin-bottom: 40px; }
+.steps { display: flex; flex-direction: column; gap: 0; position: relative; }
+.steps::before {
+  content: ''; position: absolute; left: 19px; top: 24px; bottom: 24px;
+  width: 1px; background: linear-gradient(to bottom, var(--lime-dim), transparent);
+}
+.step { display: flex; gap: 16px; align-items: flex-start; padding: 16px 0; text-align: left; }
+.step-num {
+  width: 40px; height: 40px; background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; color: var(--lime);
+  flex-shrink: 0; position: relative; z-index: 1;
+}
+.step-content h4 { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+.step-content p { color: var(--text-2); font-size: 14px; line-height: 1.5; }
+
+/* ═══════════════════════════════════════════════
+   PAGE: AUTH
+═══════════════════════════════════════════════ */
+#page-auth {
+  align-items: center; justify-content: center; padding: 24px;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(170,255,69,0.06), transparent),
+    var(--bg);
+}
+.auth-box {
+  width: 100%; max-width: 420px;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius-xl); overflow: hidden;
+}
+.auth-top {
+  padding: 32px 32px 0; text-align: center;
+}
+.auth-logo { font-family: 'Sora', sans-serif; font-size: 28px; font-weight: 800; color: var(--lime); margin-bottom: 8px; }
+.auth-tagline { color: var(--text-2); font-size: 14px; }
+.auth-tabs {
+  display: flex; margin: 24px 32px 0; background: var(--bg-2);
+  border-radius: var(--radius); padding: 4px;
+}
+.auth-tab {
+  flex: 1; padding: 10px; border-radius: 10px; font-size: 14px; font-weight: 600;
+  color: var(--text-2); background: transparent; transition: all 0.2s;
+}
+.auth-tab.active { background: var(--surface-2); color: var(--text); }
+.auth-form { padding: 24px 32px 32px; display: flex; flex-direction: column; gap: 16px; }
+.auth-divider { text-align: center; font-size: 13px; color: var(--text-3); margin: 4px 0; }
+.auth-footer { text-align: center; font-size: 13px; color: var(--text-2); padding: 0 32px 24px; }
+
+/* ═══════════════════════════════════════════════
+   PAGE: REGISTER FLOW
+═══════════════════════════════════════════════ */
+#page-register {
+  align-items: center; justify-content: center; padding: 24px;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% 0%, rgba(170,255,69,0.05), transparent),
+    var(--bg);
+}
+.register-box {
+  width: 100%; max-width: 460px;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius-xl); overflow: hidden;
+}
+.register-header { padding: 28px 28px 0; }
+.progress-bar-wrap { height: 3px; background: var(--bg-2); border-radius: 99px; margin-bottom: 24px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--lime); border-radius: 99px; transition: width 0.4s ease; }
+.reg-step-title { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+.reg-step-sub { font-size: 14px; color: var(--text-2); margin-bottom: 0; }
+.register-body { padding: 20px 28px 28px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Network selection */
+.network-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.network-option { display: none; }
+.network-label {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 16px; border: 1.5px solid var(--border-2); border-radius: var(--radius);
+  cursor: pointer; transition: all 0.2s; font-size: 13px; font-weight: 600;
+}
+.network-option:checked + .network-label {
+  border-color: var(--lime); background: var(--lime-dim); color: var(--lime);
+}
+.network-emoji { font-size: 28px; }
+
+/* Payment amount card */
+.pay-card {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 20px; text-align: center;
+  margin-bottom: 4px;
+}
+.pay-amount { font-family: 'Sora', sans-serif; font-size: 40px; font-weight: 800; color: var(--lime); }
+.pay-label { font-size: 13px; color: var(--text-2); margin-top: 4px; }
+.pay-note {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--gold-dim); border: 1px solid rgba(255,209,102,0.2);
+  border-radius: var(--radius); padding: 14px; font-size: 13px; color: var(--gold); line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════
+   PAGE: PAYMENT PENDING
+═══════════════════════════════════════════════ */
+#page-pending {
+  align-items: center; justify-content: center; padding: 24px;
+  background: var(--bg);
+}
+.pending-box {
+  text-align: center; max-width: 380px;
+}
+.pending-ring {
+  width: 100px; height: 100px; margin: 0 auto 28px;
+  border: 3px solid var(--border-2); border-top-color: var(--lime);
+  border-radius: 50%; animation: spin 1.2s linear infinite;
+  position: relative;
+}
+.pending-ring::after {
+  content: '📱'; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%); font-size: 28px; animation: none;
+  border: none;
+}
+.pending-title { font-family: 'Sora', sans-serif; font-size: 24px; font-weight: 700; margin-bottom: 12px; }
+.pending-sub { color: var(--text-2); font-size: 15px; line-height: 1.7; margin-bottom: 24px; }
+.pending-phone {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 20px;
+  font-family: 'DM Mono', monospace; font-size: 16px; color: var(--lime);
+  margin-bottom: 28px;
+}
+
+/* ═══════════════════════════════════════════════
+   PAGE: DASHBOARD
+═══════════════════════════════════════════════ */
+#page-dashboard {
+  background: var(--bg); min-height: 100vh;
+}
+.dashboard-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px; border-bottom: 1px solid var(--border-2);
+  background: rgba(7,16,13,0.9); backdrop-filter: blur(16px);
+  position: sticky; top: 0; z-index: 100;
+}
+.dash-nav-logo { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 800; color: var(--lime); }
+.dash-user { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); }
+.dash-avatar {
+  width: 32px; height: 32px; background: var(--lime-dim); border: 1px solid var(--border);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: var(--lime);
+}
+
+.dashboard-main { padding: 24px; max-width: 720px; margin: 0 auto; }
+
+/* Balance card */
+.balance-card {
+  background: linear-gradient(135deg, #0F2A1E 0%, #0A1E14 100%);
+  border: 1px solid var(--border); border-radius: var(--radius-xl);
+  padding: 28px; position: relative; overflow: hidden; margin-bottom: 20px;
+}
+.balance-card::before {
+  content: ''; position: absolute; right: -40px; top: -40px;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(170,255,69,0.08), transparent 70%);
+}
+.balance-label { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-3); margin-bottom: 10px; }
+.balance-amount { font-family: 'Sora', sans-serif; font-size: 40px; font-weight: 800; color: var(--text); }
+.balance-amount .currency { font-size: 18px; color: var(--text-2); margin-right: 6px; font-weight: 500; }
+.balance-actions { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+
+/* Referral card */
+.referral-card {
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius-lg); padding: 22px; margin-bottom: 16px;
+}
+.referral-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.referral-title { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 16px; }
+.referral-link-box {
+  display: flex; align-items: center; gap: 0;
+  background: var(--bg-2); border: 1px solid var(--border-2); border-radius: var(--radius);
+  overflow: hidden; margin-bottom: 14px;
+}
+.referral-link-text {
+  flex: 1; padding: 12px 14px; font-family: 'DM Mono', monospace;
+  font-size: 12px; color: var(--lime); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.copy-btn {
+  padding: 12px 16px; background: var(--lime-dim); color: var(--lime);
+  font-size: 12px; font-weight: 600; border: none; cursor: pointer;
+  transition: background 0.2s; white-space: nowrap;
+}
+.copy-btn:hover { background: rgba(170,255,69,0.25); }
+.referral-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ref-stat {
+  background: var(--bg-2); border-radius: var(--radius); padding: 14px; text-align: center;
+}
+.ref-stat-num { font-family: 'Sora', sans-serif; font-size: 22px; font-weight: 700; color: var(--lime); }
+.ref-stat-label { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+/* Transactions */
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.section-label { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 16px; }
+.tx-list { display: flex; flex-direction: column; gap: 8px; }
+.tx-item {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.tx-icon {
+  width: 40px; height: 40px; border-radius: 12px; display: flex;
+  align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
+}
+.tx-icon.in  { background: var(--lime-dim); }
+.tx-icon.out { background: var(--error-dim); }
+.tx-icon.ref { background: var(--gold-dim); }
+.tx-details { flex: 1; }
+.tx-desc { font-size: 14px; font-weight: 500; }
+.tx-date { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.tx-amount { font-family: 'DM Mono', monospace; font-size: 14px; font-weight: 500; }
+.tx-amount.in  { color: var(--lime); }
+.tx-amount.out { color: var(--error); }
+.tx-amount.ref { color: var(--gold); }
+.tx-empty { text-align: center; padding: 40px 20px; color: var(--text-3); font-size: 14px; }
+
+/* Withdraw Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(8px); z-index: 1000;
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 0;
+  animation: fadeIn 0.2s ease;
+}
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+.modal-overlay.hidden { display: none !important; }
+.modal-sheet {
+  background: var(--surface-2); border: 1px solid var(--border-2);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: 32px 28px 40px; width: 100%; max-width: 480px;
+  animation: slideUp 0.3s ease;
+}
+@keyframes slideUp { from { transform: translateY(60px); opacity:0; } to { transform: translateY(0); opacity:1; } }
+.modal-handle { width: 40px; height: 4px; background: var(--border-2); border-radius: 99px; margin: 0 auto 24px; }
+.modal-title { font-family: 'Sora', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.modal-sub { font-size: 14px; color: var(--text-2); margin-bottom: 24px; }
+.amount-presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.preset-btn {
+  padding: 8px 14px; background: var(--bg-2); border: 1px solid var(--border-2);
+  border-radius: 99px; font-size: 13px; font-weight: 500; color: var(--text-2);
+  transition: all 0.15s;
+}
+.preset-btn:hover, .preset-btn.active { border-color: var(--lime); color: var(--lime); background: var(--lime-dim); }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 99px;
+  padding: 12px 22px; font-size: 14px; font-weight: 500; color: var(--text);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5); z-index: 9999;
+  animation: toastIn 0.3s ease; white-space: nowrap;
+}
+.toast.success { color: var(--lime); border-color: var(--border); }
+.toast.error   { color: var(--error); }
+@keyframes toastIn { from { opacity:0; transform: translateX(-50%) translateY(12px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+/* ═══════════════════════════════════════════════
+   MOBILE ADJUSTMENTS
+═══════════════════════════════════════════════ */
+@media (max-width: 520px) {
+  .hero { padding: 60px 20px 40px; }
+  .hero-title { letter-spacing: -1px; }
+  .auth-form, .register-body { padding-left: 20px; padding-right: 20px; }
+  .auth-top, .register-header { padding-left: 20px; padding-right: 20px; }
+  .auth-tabs { margin-left: 20px; margin-right: 20px; }
+  .auth-footer { padding-left: 20px; padding-right: 20px; }
+  .balance-amount { font-size: 32px; }
+  .modal-sheet { padding: 28px 20px 40px; }
+  .dashboard-main { padding: 16px; }
+}
+
+/* ═══════════════════════════════════════════════
+   LOADING SCREEN
+═══════════════════════════════════════════════ */
+#page-loading {
+  align-items: center; justify-content: center;
+}
+.loading-logo { font-family: 'Sora', sans-serif; font-size: 48px; font-weight: 800; color: var(--lime); animation: breathe 2s ease infinite; }
+@keyframes breathe { 0%,100% { opacity:0.5; } 50% { opacity:1; } }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ LOADING ══ -->
+<div id="page-loading" class="page active">
+  <div class="loading-logo">MW</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ LANDING ══ -->
+<div id="page-landing" class="page">
+  <nav class="nav">
+    <div class="nav-logo">MW <span>— Refer & Earn</span></div>
+    <div class="nav-actions">
+      <button class="btn btn-secondary btn-sm" onclick="showPage('auth','login')">Log In</button>
+      <button class="btn btn-primary btn-sm" onclick="showPage('auth','register')">Join Now</button>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <div class="hero-eyebrow">🇺🇬 Uganda's Referral Platform</div>
+    <h1 class="hero-title">Earn <span class="accent">UGX 4,000</span> for every friend you refer</h1>
+    <p class="hero-sub">Register once for UGX 20,000. Share your link. Get paid instantly to your mobile money wallet every time someone joins.</p>
+    <div class="hero-cta">
+      <button class="btn btn-primary" onclick="showPage('auth','register')">Get Started Free →</button>
+      <button class="btn btn-secondary" onclick="showPage('auth','login')">Already a member?</button>
+    </div>
+    <div class="hero-stats">
+      <div class="stat-item">
+        <div class="stat-num">UGX 4K</div>
+        <div class="stat-label">Per Referral</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">Instant</div>
+        <div class="stat-label">Payouts</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">MTN + Airtel</div>
+        <div class="stat-label">Supported</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">💰</div>
+      <div class="feature-title">Instant Earnings</div>
+      <div class="feature-desc">Your referral bonus hits your dashboard the moment your friend completes registration. No delays, no waiting periods.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📱</div>
+      <div class="feature-title">Mobile Money</div>
+      <div class="feature-desc">Works with MTN MoMo and Airtel Money. Pay and withdraw right from your existing mobile money wallet.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔗</div>
+      <div class="feature-title">Your Personal Link</div>
+      <div class="feature-desc">Get a unique referral link and code. Share anywhere — WhatsApp, TikTok, Facebook, word of mouth.</div>
+    </div>
+  </div>
+
+  <div class="how-it-works">
+    <h2 class="section-title">How it works</h2>
+    <p class="section-sub">Simple three-step process to start earning</p>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-content">
+          <h4>Register with Mobile Money</h4>
+          <p>Pay UGX 20,000 one-time registration fee via MTN MoMo or Airtel Money to activate your account.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-content">
+          <h4>Share your referral link</h4>
+          <p>You instantly get a unique link. Share it on WhatsApp, social media, or anywhere your friends are.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-content">
+          <h4>Earn UGX 4,000 per referral</h4>
+          <p>Every time someone registers using your link, UGX 4,000 is instantly added to your balance. Withdraw anytime.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ AUTH ══ -->
+<div id="page-auth" class="page" style="min-height:100vh;">
+  <nav class="nav">
+    <div class="nav-logo" onclick="showPage('landing')" style="cursor:pointer">MW</div>
+  </nav>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;">
+    <div class="auth-box">
+      <div class="auth-top">
+        <div class="auth-logo">MW</div>
+        <div class="auth-tagline">Uganda's Referral Platform</div>
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Log In</button>
+          <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Register</button>
+        </div>
+      </div>
+
+      <!-- Login Form -->
+      <form class="auth-form" id="login-form" onsubmit="handleLogin(event)">
+        <div id="login-alert" class="alert alert-error hidden"></div>
+        <div class="input-group">
+          <label class="input-label">Email Address</label>
+          <input type="email" id="login-email" class="input-field" placeholder="you@example.com" required/>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Password</label>
+          <input type="password" id="login-password" class="input-field" placeholder="Your password" required/>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+          Log In
+        </button>
+      </form>
+
+      <!-- Register Form (quick — just email + password, full details in next step) -->
+      <form class="auth-form hidden" id="register-form" onsubmit="handleSignup(event)">
+        <div id="register-alert" class="alert alert-error hidden"></div>
+        <div class="input-group">
+          <label class="input-label">Full Name</label>
+          <input type="text" id="reg-name" class="input-field" placeholder="John Doe" required/>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Email Address</label>
+          <input type="email" id="reg-email" class="input-field" placeholder="you@example.com" required/>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Password</label>
+          <input type="password" id="reg-password" class="input-field" placeholder="Min. 6 characters" minlength="6" required/>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full" id="signup-btn">
+          Continue →
+        </button>
+      </form>
+
+      <div class="auth-footer">
+        By continuing you agree to our <a href="#">Terms of Service</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ REGISTER FLOW ══ -->
+<div id="page-register" class="page" style="min-height:100vh;">
+  <nav class="nav">
+    <div class="nav-logo" style="cursor:pointer" onclick="showPage('landing')">MW</div>
+    <button class="btn btn-ghost btn-sm" onclick="handleLogout()">Exit</button>
+  </nav>
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px;">
+    <div class="register-box">
+      <div class="register-header">
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progress-bar" style="width:33%"></div>
+        </div>
+        <div class="reg-step-title" id="step-title">Phone Number</div>
+        <div class="reg-step-sub" id="step-sub">Enter your mobile money number</div>
+      </div>
+
+      <!-- Step 1: Phone + Network -->
+      <div class="register-body" id="reg-step-1">
+        <div id="reg-step1-alert" class="alert alert-error hidden"></div>
+        <div class="input-group">
+          <label class="input-label">Mobile Money Number</label>
+          <input type="tel" id="reg-phone" class="input-field" placeholder="0701 234 567 or 256701234567"/>
+          <small style="color:var(--text-3);font-size:12px;">This number will be used for all payments & withdrawals</small>
+        </div>
+        <div class="input-group">
+          <label class="input-label">Mobile Network</label>
+          <div class="network-options">
+            <div>
+              <input type="radio" name="network" id="net-mtn" value="MTN" class="network-option"/>
+              <label for="net-mtn" class="network-label">
+                <span class="network-emoji">🟡</span>
+                MTN MoMo
+              </label>
+            </div>
+            <div>
+              <input type="radio" name="network" id="net-airtel" value="AIRTEL" class="network-option"/>
+              <label for="net-airtel" class="network-label">
+                <span class="network-emoji">🔴</span>
+                Airtel Money
+              </label>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="goToStep2()">Continue →</button>
+      </div>
+
+      <!-- Step 2: Referral Code -->
+      <div class="register-body hidden" id="reg-step-2">
+        <div class="input-group">
+          <label class="input-label">Referral Code <span style="color:var(--text-3)">(optional)</span></label>
+          <input type="text" id="reg-referral" class="input-field" placeholder="e.g. MWABCD12" style="text-transform:uppercase"/>
+          <small style="color:var(--text-3);font-size:12px;">If someone invited you, enter their code. Skip if you don't have one.</small>
+        </div>
+        <div id="referral-valid" class="alert alert-success hidden">✓ Referral code is valid!</div>
+        <div id="referral-invalid" class="alert alert-error hidden">✗ Invalid or inactive referral code</div>
+        <button class="btn btn-primary btn-full" onclick="goToStep3()">Continue →</button>
+        <button class="btn btn-secondary btn-full" onclick="skipReferral()" style="margin-top:-8px">Skip — I don't have a code</button>
+      </div>
+
+      <!-- Step 3: Pay -->
+      <div class="register-body hidden" id="reg-step-3">
+        <div id="reg-step3-alert" class="alert alert-error hidden"></div>
+        <div class="pay-card">
+          <div class="pay-amount">UGX 20,000</div>
+          <div class="pay-label">One-time Registration Fee</div>
+        </div>
+        <div class="pay-note">
+          <span>💡</span>
+          <span>A mobile money prompt will be sent to <strong id="pay-phone-display"></strong>. Confirm it on your phone to activate your account.</span>
+        </div>
+        <div style="background:var(--bg-2);border-radius:var(--radius);padding:14px;font-size:13px;color:var(--text-2);">
+          <strong style="color:var(--text)">Summary</strong>
+          <div style="display:flex;justify-content:space-between;margin-top:10px;">
+            <span>Registration fee</span><span style="color:var(--text)">UGX 20,000</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:6px;">
+            <span>Network</span><span id="pay-network-display" style="color:var(--text)"></span>
+          </div>
+          <div id="pay-referral-row" style="display:flex;justify-content:space-between;margin-top:6px;" class="hidden">
+            <span>Referral code</span><span id="pay-referral-display" style="color:var(--lime)"></span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="pay-btn" onclick="initiatePayment()">
+          Pay UGX 20,000 via Mobile Money
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ PENDING ══ -->
+<div id="page-pending" class="page">
+  <div class="pending-box">
+    <div class="pending-ring"></div>
+    <h2 class="pending-title">Check Your Phone</h2>
+    <p class="pending-sub">A Mobile Money prompt has been sent to your number. Accept it to complete registration.</p>
+    <div class="pending-phone" id="pending-phone-display">+256...</div>
+    <div id="pending-alert" class="alert alert-error hidden" style="margin-bottom:16px;text-align:left"></div>
+    <p style="font-size:13px;color:var(--text-3)">This page will update automatically once payment is confirmed.</p>
+    <div style="margin-top:20px;">
+      <button class="btn btn-secondary btn-sm" onclick="cancelPendingPayment()">Cancel & Go Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ DASHBOARD ══ -->
+<div id="page-dashboard" class="page">
+  <nav class="dashboard-nav">
+    <div class="dash-nav-logo">MW</div>
+    <div class="dash-user">
+      <span id="dash-username">Loading…</span>
+      <div class="dash-avatar" id="dash-avatar">?</div>
+      <button class="btn btn-ghost btn-sm" onclick="handleLogout()">Sign Out</button>
+    </div>
+  </nav>
+
+  <div class="dashboard-main">
+    <!-- Balance -->
+    <div class="balance-card">
+      <div class="balance-label">Available Balance</div>
+      <div class="balance-amount"><span class="currency">UGX</span><span id="dash-balance">0</span></div>
+      <div class="balance-actions">
+        <button class="btn btn-primary" onclick="openWithdrawModal()">
+          ↑ Withdraw
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="refreshDashboard()">
+          ↻ Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Referral -->
+    <div class="referral-card">
+      <div class="referral-header">
+        <div class="referral-title">🔗 Your Referral</div>
+        <div class="badge badge-lime">UGX 4,000 / referral</div>
+      </div>
+      <div class="referral-link-box">
+        <div class="referral-link-text" id="dash-ref-link">Loading…</div>
+        <button class="copy-btn" onclick="copyReferralLink()">Copy</button>
+      </div>
+      <div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="shareOnWhatsApp()">📱 WhatsApp</button>
+        <button class="btn btn-secondary btn-sm" onclick="copyReferralLink()">📋 Copy Link</button>
+      </div>
+      <div class="referral-stats">
+        <div class="ref-stat">
+          <div class="ref-stat-num" id="dash-ref-count">0</div>
+          <div class="ref-stat-label">Total Referrals</div>
+        </div>
+        <div class="ref-stat">
+          <div class="ref-stat-num" id="dash-ref-earned">UGX 0</div>
+          <div class="ref-stat-label">Total Earned</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transactions -->
+    <div>
+      <div class="section-header">
+        <div class="section-label">Transaction History</div>
+      </div>
+      <div class="tx-list" id="dash-transactions">
+        <div class="tx-empty">Loading transactions…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ WITHDRAW MODAL ══ -->
+<div id="withdraw-modal" class="modal-overlay hidden">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title">Withdraw to Mobile Money</div>
+    <div class="modal-sub">Funds will be sent to your registered number: <strong id="modal-phone"></strong></div>
+    <div id="withdraw-alert" class="alert alert-error hidden" style="margin-bottom:16px"></div>
+    <div class="amount-presets">
+      <button class="preset-btn" onclick="setWithdrawAmount(5000)">5,000</button>
+      <button class="preset-btn" onclick="setWithdrawAmount(10000)">10,000</button>
+      <button class="preset-btn" onclick="setWithdrawAmount(20000)">20,000</button>
+      <button class="preset-btn" onclick="setWithdrawAmount(50000)">50,000</button>
+    </div>
+    <div class="input-group" style="margin-bottom:20px">
+      <label class="input-label">Amount (UGX)</label>
+      <input type="number" id="withdraw-amount" class="input-field" placeholder="e.g. 10000" min="1000" step="1000"/>
+      <small style="color:var(--text-3);font-size:12px;">Balance: UGX <span id="modal-balance">0</span> · Min: UGX 1,000</small>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-secondary" onclick="closeWithdrawModal()" style="flex:1">Cancel</button>
+      <button class="btn btn-primary" onclick="handleWithdraw()" id="withdraw-btn" style="flex:2">Withdraw</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ TOAST ══ -->
+<div id="toast" class="toast hidden"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  CONFIGURATION — fill in your own values
+// ════════════════════════════════════════════════════════════
+const SUPABASE_URL        = 'YOUR_SUPABASE_URL';           // e.g. https://xxxx.supabase.co
+const SUPABASE_ANON_KEY   = 'YOUR_SUPABASE_ANON_KEY';
+const APP_URL             = window.location.origin;         // auto-detected
+
+// ════════════════════════════════════════════════════════════
+//  SUPABASE CLIENT
+// ════════════════════════════════════════════════════════════
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════
+let currentUser    = null;
+let currentProfile = null;
+let pollTimer      = null;
+
+// Temp registration data across steps
+const regData = { fullName:'', email:'', phone:'', network:'', referralCode:'' };
+
+// ════════════════════════════════════════════════════════════
+//  PAGE NAVIGATION
+// ════════════════════════════════════════════════════════════
+function showPage(id, subState) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  if (id === 'auth') switchAuthTab(subState || 'login');
+  window.scrollTo(0, 0);
+}
+
+// ════════════════════════════════════════════════════════════
+//  AUTH — TAB SWITCH
+// ════════════════════════════════════════════════════════════
+function switchAuthTab(tab) {
+  document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
+  document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
+  document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+  document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+}
+
+// ════════════════════════════════════════════════════════════
+//  AUTH — LOGIN
+// ════════════════════════════════════════════════════════════
+async function handleLogin(e) {
+  e.preventDefault();
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn      = document.getElementById('login-btn');
+  const alert    = document.getElementById('login-alert');
+
+  setLoading(btn, true, 'Logging in…');
+  hideAlert(alert);
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) {
+    showAlert(alert, error.message || 'Login failed');
+    setLoading(btn, false, 'Log In');
+    return;
+  }
+
+  currentUser = data.user;
+  await loadProfileAndRoute();
+  setLoading(btn, false, 'Log In');
+}
+
+// ════════════════════════════════════════════════════════════
+//  AUTH — SIGN UP (step 1)
+// ════════════════════════════════════════════════════════════
+async function handleSignup(e) {
+  e.preventDefault();
+  const fullName = document.getElementById('reg-name').value.trim();
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const btn      = document.getElementById('signup-btn');
+  const alert    = document.getElementById('register-alert');
+
+  if (!fullName) { showAlert(alert, 'Please enter your full name'); return; }
+
+  setLoading(btn, true, 'Creating account…');
+  hideAlert(alert);
+
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if (error) {
+    // If user already exists, try sign-in instead
+    if (error.message.toLowerCase().includes('already')) {
+      showAlert(alert, 'Email already registered. Please log in.');
+    } else {
+      showAlert(alert, error.message);
+    }
+    setLoading(btn, false, 'Continue →');
+    return;
+  }
+
+  if (!data.user) {
+    showAlert(alert, 'Check your email to confirm your account, then log in.');
+    setLoading(btn, false, 'Continue →');
+    return;
+  }
+
+  currentUser = data.user;
+  regData.fullName = fullName;
+  regData.email    = email;
+  setLoading(btn, false, 'Continue →');
+  showPage('register');
+}
+
+// ════════════════════════════════════════════════════════════
+//  REGISTRATION FLOW — STEPS
+// ════════════════════════════════════════════════════════════
+function goToStep2() {
+  const phone   = document.getElementById('reg-phone').value.trim();
+  const network = document.querySelector('input[name="network"]:checked')?.value;
+  const alert   = document.getElementById('reg-step1-alert');
+
+  hideAlert(alert);
+  if (!phone) { showAlert(alert, 'Please enter your phone number'); return; }
+  if (!network) { showAlert(alert, 'Please select MTN or Airtel'); return; }
+
+  regData.phone   = phone;
+  regData.network = network;
+
+  document.getElementById('reg-step-1').classList.add('hidden');
+  document.getElementById('reg-step-2').classList.remove('hidden');
+  document.getElementById('progress-bar').style.width = '66%';
+  document.getElementById('step-title').textContent = 'Referral Code';
+  document.getElementById('step-sub').textContent   = 'Enter a code if you were referred';
+}
+
+async function goToStep3() {
+  const code  = document.getElementById('reg-referral').value.trim().toUpperCase();
+  const valid = document.getElementById('referral-valid');
+  const invalid = document.getElementById('referral-invalid');
+  hideAlert(valid); hideAlert(invalid);
+
+  if (code) {
+    // Validate referral code
+    const { data, error } = await sb.rpc('check_referral_code', { p_code: code });
+    if (error || !data) {
+      showAlert(invalid, 'Invalid or inactive referral code');
+      return;
+    }
+    showAlert(valid, '✓ Referral code is valid!');
+    regData.referralCode = code;
+  }
+
+  moveToPayStep();
+}
+
+function skipReferral() {
+  regData.referralCode = '';
+  moveToPayStep();
+}
+
+function moveToPayStep() {
+  document.getElementById('reg-step-2').classList.add('hidden');
+  document.getElementById('reg-step-3').classList.remove('hidden');
+  document.getElementById('progress-bar').style.width = '100%';
+  document.getElementById('step-title').textContent = 'Pay Registration Fee';
+  document.getElementById('step-sub').textContent   = 'One-time payment to activate your account';
+
+  document.getElementById('pay-phone-display').textContent   = regData.phone;
+  document.getElementById('pay-network-display').textContent = regData.network;
+  if (regData.referralCode) {
+    document.getElementById('pay-referral-row').classList.remove('hidden');
+    document.getElementById('pay-referral-display').textContent = regData.referralCode;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  REGISTRATION FLOW — INITIATE PAYMENT
+// ════════════════════════════════════════════════════════════
+async function initiatePayment() {
+  const btn   = document.getElementById('pay-btn');
+  const alert = document.getElementById('reg-step3-alert');
+  hideAlert(alert);
+
+  if (!currentUser) { showPage('auth'); return; }
+
+  setLoading(btn, true, 'Initiating payment…');
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { showPage('auth'); return; }
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/collect-payment`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({
+      fullName:     regData.fullName,
+      phoneNumber:  regData.phone,
+      network:      regData.network,
+      referralCode: regData.referralCode,
+    }),
+  });
+
+  const result = await res.json();
+  setLoading(btn, false, 'Pay UGX 20,000 via Mobile Money');
+
+  if (!result.success) {
+    showAlert(alert, result.error || 'Payment initiation failed. Please try again.');
+    return;
+  }
+
+  // Show pending screen
+  document.getElementById('pending-phone-display').textContent = regData.phone;
+  showPage('pending');
+  startPolling(result.reference);
+}
+
+// ════════════════════════════════════════════════════════════
+//  POLL FOR PAYMENT STATUS
+// ════════════════════════════════════════════════════════════
+function startPolling(reference) {
+  clearInterval(pollTimer);
+  let attempts = 0;
+  const MAX_ATTEMPTS = 40; // 2 minutes
+
+  pollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > MAX_ATTEMPTS) {
+      clearInterval(pollTimer);
+      const al = document.getElementById('pending-alert');
+      showAlert(al, 'Payment timed out. Please try again.');
+      return;
+    }
+
+    const { data: tx } = await sb
+      .from('transactions')
+      .select('status')
+      .eq('reference', reference)
+      .maybeSingle();
+
+    if (!tx) return;
+
+    if (tx.status === 'completed') {
+      clearInterval(pollTimer);
+      await loadProfileAndRoute();
+    } else if (tx.status === 'failed') {
+      clearInterval(pollTimer);
+      const al = document.getElementById('pending-alert');
+      showAlert(al, 'Payment failed or was cancelled. Please go back and try again.');
+    }
+  }, 3000);
+}
+
+function cancelPendingPayment() {
+  clearInterval(pollTimer);
+  showPage('register');
+  // Reset to step 3
+  document.getElementById('reg-step-3').classList.remove('hidden');
+  document.getElementById('reg-step-1').classList.add('hidden');
+  document.getElementById('reg-step-2').classList.add('hidden');
+}
+
+// ════════════════════════════════════════════════════════════
+//  LOAD PROFILE & ROUTE
+// ════════════════════════════════════════════════════════════
+async function loadProfileAndRoute() {
+  if (!currentUser) {
+    showPage('landing');
+    return;
+  }
+
+  const { data: profile } = await sb
+    .from('profiles')
+    .select('*')
+    .eq('id', currentUser.id)
+    .maybeSingle();
+
+  currentProfile = profile;
+
+  if (!profile) {
+    // Profile doesn't exist yet — go to registration
+    showPage('register');
+    return;
+  }
+
+  if (!profile.is_active) {
+    // Profile exists but not paid yet
+    showPage('register');
+    return;
+  }
+
+  // Fully active — load dashboard
+  await loadDashboard();
+  showPage('dashboard');
+}
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ════════════════════════════════════════════════════════════
+async function loadDashboard() {
+  if (!currentProfile) return;
+
+  // User info
+  const firstName = currentProfile.full_name.split(' ')[0];
+  document.getElementById('dash-username').textContent = currentProfile.full_name;
+  document.getElementById('dash-avatar').textContent   = firstName[0].toUpperCase();
+
+  // Balance
+  document.getElementById('dash-balance').textContent = Number(currentProfile.balance).toLocaleString();
+  document.getElementById('modal-balance').textContent = Number(currentProfile.balance).toLocaleString();
+  document.getElementById('modal-phone').textContent   = currentProfile.phone_number;
+
+  // Referral link
+  const refLink = `${APP_URL}?ref=${currentProfile.referral_code}`;
+  document.getElementById('dash-ref-link').textContent = refLink;
+
+  // Referral stats
+  const { data: referrals } = await sb
+    .from('profiles')
+    .select('id', { count: 'exact' })
+    .eq('referred_by', currentProfile.id)
+    .eq('is_active', true);
+
+  const refCount  = referrals?.length ?? 0;
+  const refEarned = refCount * 4000;
+  document.getElementById('dash-ref-count').textContent  = refCount;
+  document.getElementById('dash-ref-earned').textContent = `UGX ${refEarned.toLocaleString()}`;
+
+  // Transactions
+  await loadTransactions();
+}
+
+async function loadTransactions() {
+  const { data: txs } = await sb
+    .from('transactions')
+    .select('*')
+    .eq('user_id', currentProfile.id)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  const container = document.getElementById('dash-transactions');
+  if (!txs || txs.length === 0) {
+    container.innerHTML = '<div class="tx-empty">No transactions yet</div>';
+    return;
+  }
+
+  container.innerHTML = txs.map(tx => {
+    const isIn = tx.type === 'referral_bonus';
+    const isOut = tx.type === 'withdrawal';
+    const isReg = tx.type === 'registration';
+
+    const iconClass = isIn ? 'ref' : isOut ? 'out' : 'in';
+    const amtClass  = isIn ? 'ref' : isOut ? 'out' : 'in';
+    const icon      = isIn ? '🎁' : isOut ? '↑' : '💰';
+    const sign      = isOut ? '-' : '+';
+    const desc      = tx.description || (isReg ? 'Registration Fee' : isIn ? 'Referral Bonus' : 'Withdrawal');
+    const date      = new Date(tx.created_at).toLocaleDateString('en-UG', { day:'numeric', month:'short', year:'numeric' });
+
+    const statusBadge = tx.status === 'completed' ? '' :
+      tx.status === 'pending' ? ' <span class="badge badge-gold" style="font-size:11px">Pending</span>' :
+      ' <span class="badge badge-red" style="font-size:11px">Failed</span>';
+
+    return `
+      <div class="tx-item">
+        <div class="tx-icon ${iconClass}">${icon}</div>
+        <div class="tx-details">
+          <div class="tx-desc">${desc}${statusBadge}</div>
+          <div class="tx-date">${date}</div>
+        </div>
+        <div class="tx-amount ${amtClass}">${sign} ${Number(tx.amount).toLocaleString()}</div>
+      </div>`;
+  }).join('');
+}
+
+async function refreshDashboard() {
+  if (!currentUser) return;
+  const { data } = await sb.from('profiles').select('*').eq('id', currentUser.id).single();
+  currentProfile = data;
+  await loadDashboard();
+  showToast('Dashboard refreshed', 'success');
+}
+
+// ════════════════════════════════════════════════════════════
+//  REFERRAL SHARING
+// ════════════════════════════════════════════════════════════
+function copyReferralLink() {
+  const link = `${APP_URL}?ref=${currentProfile.referral_code}`;
+  navigator.clipboard.writeText(link).then(() => showToast('Link copied!', 'success'));
+}
+
+function shareOnWhatsApp() {
+  const link = `${APP_URL}?ref=${currentProfile.referral_code}`;
+  const msg  = encodeURIComponent(
+    `Join MW and earn money! Register using my link and we both benefit.\n\n${link}\n\nUse my code: ${currentProfile.referral_code}`
+  );
+  window.open(`https://wa.me/?text=${msg}`, '_blank');
+}
+
+// ════════════════════════════════════════════════════════════
+//  WITHDRAW
+// ════════════════════════════════════════════════════════════
+function openWithdrawModal() {
+  document.getElementById('modal-balance').textContent = Number(currentProfile.balance).toLocaleString();
+  document.getElementById('withdraw-amount').value = '';
+  hideAlert(document.getElementById('withdraw-alert'));
+  document.getElementById('withdraw-modal').classList.remove('hidden');
+}
+function closeWithdrawModal() {
+  document.getElementById('withdraw-modal').classList.add('hidden');
+}
+
+function setWithdrawAmount(amount) {
+  document.getElementById('withdraw-amount').value = amount;
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+async function handleWithdraw() {
+  const amount = parseInt(document.getElementById('withdraw-amount').value, 10);
+  const btn    = document.getElementById('withdraw-btn');
+  const alert  = document.getElementById('withdraw-alert');
+  hideAlert(alert);
+
+  if (!amount || amount < 1000) { showAlert(alert, 'Minimum withdrawal is UGX 1,000'); return; }
+  if (amount > currentProfile.balance) { showAlert(alert, 'Insufficient balance'); return; }
+
+  setLoading(btn, true, 'Processing…');
+
+  const { data: { session } } = await sb.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/withdraw`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${session.access_token}`,
+      'apikey': SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify({ amount }),
+  });
+
+  const result = await res.json();
+  setLoading(btn, false, 'Withdraw');
+
+  if (!result.success) {
+    showAlert(alert, result.error || 'Withdrawal failed');
+    return;
+  }
+
+  closeWithdrawModal();
+  showToast(result.message || 'Withdrawal initiated!', 'success');
+  await refreshDashboard();
+}
+
+// ════════════════════════════════════════════════════════════
+//  AUTH — LOGOUT
+// ════════════════════════════════════════════════════════════
+async function handleLogout() {
+  clearInterval(pollTimer);
+  await sb.auth.signOut();
+  currentUser = null;
+  currentProfile = null;
+  showPage('landing');
+}
+
+// ════════════════════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════════════════════
+function setLoading(btn, loading, text) {
+  btn.disabled = loading;
+  btn.innerHTML = loading
+    ? `<div class="spinner"></div> ${text}`
+    : text;
+}
+
+function showAlert(el, msg) {
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+function hideAlert(el) {
+  el.classList.add('hidden');
+  el.textContent = '';
+}
+
+let toastTimer;
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast${type ? ' ' + type : ''}`;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 3200);
+}
+
+// ════════════════════════════════════════════════════════════
+//  REFERRAL CODE PRE-FILL FROM URL
+// ════════════════════════════════════════════════════════════
+function checkUrlReferral() {
+  const params = new URLSearchParams(window.location.search);
+  const ref    = params.get('ref');
+  if (ref) {
+    sessionStorage.setItem('mw_ref', ref.toUpperCase());
+  }
+}
+
+function applyStoredReferral() {
+  const ref = sessionStorage.getItem('mw_ref');
+  if (ref) {
+    const input = document.getElementById('reg-referral');
+    if (input) input.value = ref;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+async function init() {
+  checkUrlReferral();
+
+  const { data: { session } } = await sb.auth.getSession();
+
+  if (session?.user) {
+    currentUser = session.user;
+    await loadProfileAndRoute();
+  } else {
+    // Check if we came from a referral link
+    const ref = sessionStorage.getItem('mw_ref');
+    if (ref) {
+      showPage('auth', 'register');
+    } else {
+      showPage('landing');
+    }
+  }
+
+  // Listen for auth changes
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (event === 'SIGNED_OUT') {
+      currentUser = null;
+      currentProfile = null;
+    }
+  });
+
+  // Pre-fill referral after page shows
+  setTimeout(applyStoredReferral, 300);
+}
+
+// Close modal on overlay click
+document.getElementById('withdraw-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeWithdrawModal();
+});
+
+// Start the app
+init();
+</script>
+</body>
+</html>
