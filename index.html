@@ -1026,6 +1026,35 @@ body::before {
   </nav>
 </div>
 
+<!-- Vault Purchase Confirmation Modal -->
+<div id="vault-purchase-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeVaultPurchaseModal()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="vpm-title">—</div>
+    <p class="modal-sub">Review your upgrade and confirm. Funds come from your deposit wallet.</p>
+
+    <div id="vpm-alert" class="alert alert-error hidden"></div>
+
+    <div class="card card-accent">
+      <div class="info-row"><span class="info-label">Plan price</span><span class="info-val" id="vpm-price">—</span></div>
+      <div class="info-row"><span class="info-label">Wallet before</span><span class="info-val" id="vpm-wallet-before">—</span></div>
+      <div class="info-row"><span class="info-label">Wallet after</span><span class="info-val" id="vpm-wallet-after" style="color:var(--lime);">—</span></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;font-size:13px;color:var(--text-2);text-transform:uppercase;letter-spacing:0.06em;">What you get</div>
+      <div class="info-row"><span class="info-label">Tasks per day</span><span class="info-val" id="vpm-tasks">—</span></div>
+      <div class="info-row"><span class="info-label">UGX per task</span><span class="info-val" id="vpm-per-task">—</span></div>
+      <div class="info-row"><span class="info-label">Est. monthly</span><span class="info-val" style="color:var(--green);" id="vpm-monthly">—</span></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-top:8px;">
+      <button class="btn btn-secondary" onclick="closeVaultPurchaseModal()">Cancel</button>
+      <button class="btn btn-primary" id="vpm-confirm-btn">Confirm</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="hidden"></div>
 
@@ -1370,9 +1399,35 @@ async function loadVaultPlans() {
   }
   const list = document.getElementById('vault-plan-list');
   list.innerHTML = '';
+
+  const currentPlan = vaultPlansCache.find(p => p.id === currentProfile?.vault_plan_id);
+  const currentOrder = currentPlan?.sort_order ?? 0;
+  const wallet = Number(currentProfile?.balance || 0);
+
   vaultPlansCache.forEach(plan => {
-    const isOwned = currentProfile?.vault_plan_id === plan.id;
-    const isEarly = plan.id === 'early_bird';
+    const isOwned  = currentProfile?.vault_plan_id === plan.id;
+    const isEarly  = plan.id === 'early_bird';
+    const isLower  = plan.sort_order <= currentOrder && !isOwned;
+    const canAfford = wallet >= plan.price;
+
+    let buttonHtml = '';
+    if (isOwned) {
+      buttonHtml = ''; // current plan — no button
+    } else if (isEarly) {
+      buttonHtml = ''; // early bird isn't purchaseable
+    } else if (isLower) {
+      buttonHtml = '<div style="margin-top:12px;font-size:12px;color:var(--text-3);text-align:center;">Already surpassed</div>';
+    } else if (!canAfford) {
+      const need = plan.price - wallet;
+      buttonHtml = `
+        <button class="btn btn-secondary btn-full btn-sm" style="margin-top:12px;" onclick="showSection('wallet');setTimeout(()=>showWalletTab('deposit'),100);">
+          Deposit UGX ${need.toLocaleString()} more
+        </button>
+      `;
+    } else {
+      buttonHtml = `<button class="btn btn-primary btn-full btn-sm" style="margin-top:12px;" onclick="confirmVaultPurchase('${plan.id}')">Purchase — UGX ${plan.price.toLocaleString()}</button>`;
+    }
+
     const card = document.createElement('div');
     card.className = `vault-card ${isOwned ? 'owned' : ''}`;
     card.innerHTML = `
@@ -1385,10 +1440,68 @@ async function loadVaultPlans() {
         <div class="vault-stat"><div class="vault-stat-val">${plan.ugx_per_task.toLocaleString()}</div><div class="vault-stat-lbl">UGX/task</div></div>
         <div class="vault-stat"><div class="vault-stat-val">${(plan.monthly_est/1000).toFixed(0)}K</div><div class="vault-stat-lbl">Monthly</div></div>
       </div>
-      ${isOwned ? '' : `<button class="btn btn-primary btn-full btn-sm" style="margin-top:12px;" onclick="toast('Purchases coming in Phase 3', 'info')">Purchase — UGX ${plan.price.toLocaleString()}</button>`}
+      ${buttonHtml}
     `;
     list.appendChild(card);
   });
+}
+
+function confirmVaultPurchase(planId) {
+  const plan = vaultPlansCache?.find(p => p.id === planId);
+  if (!plan) return;
+  const wallet = Number(currentProfile?.balance || 0);
+  const afterBalance = wallet - plan.price;
+
+  // Render summary into the modal
+  document.getElementById('vpm-title').textContent = `${plan.emoji || ''} ${plan.display_name}`;
+  document.getElementById('vpm-price').textContent = `UGX ${plan.price.toLocaleString()}`;
+  document.getElementById('vpm-wallet-before').textContent = `UGX ${wallet.toLocaleString()}`;
+  document.getElementById('vpm-wallet-after').textContent = `UGX ${afterBalance.toLocaleString()}`;
+  document.getElementById('vpm-tasks').textContent = plan.tasks_per_day;
+  document.getElementById('vpm-per-task').textContent = `UGX ${plan.ugx_per_task.toLocaleString()}`;
+  document.getElementById('vpm-monthly').textContent  = `UGX ${plan.monthly_est.toLocaleString()}`;
+  const btn = document.getElementById('vpm-confirm-btn');
+  btn.onclick = () => submitVaultPurchase(plan.id);
+  setLoading(btn, false, `Confirm — UGX ${plan.price.toLocaleString()}`);
+  document.getElementById('vault-alert').classList.add('hidden');
+  document.getElementById('vpm-alert').classList.add('hidden');
+
+  document.getElementById('vault-purchase-modal').classList.remove('hidden');
+}
+
+function closeVaultPurchaseModal() {
+  document.getElementById('vault-purchase-modal').classList.add('hidden');
+}
+
+async function submitVaultPurchase(planId) {
+  const btn   = document.getElementById('vpm-confirm-btn');
+  const alert = document.getElementById('vpm-alert');
+  hideAlert(alert);
+  setLoading(btn, true, 'Processing…');
+  const { data: { session } } = await sb.auth.getSession();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/purchase-vault`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+        'apikey': SUPABASE_ANON_KEY,
+      },
+      body: JSON.stringify({ plan_id: planId }),
+    });
+    const result = await res.json();
+    if (!result.success) {
+      setLoading(btn, false, 'Try Again');
+      showAlert(alert, result.error || 'Purchase failed');
+      return;
+    }
+    closeVaultPurchaseModal();
+    toast(result.message, 'success');
+    await loadProfileAndRoute();
+  } catch {
+    setLoading(btn, false, 'Try Again');
+    showAlert(alert, 'Network error');
+  }
 }
 
 // ════════════════════════════════════════════════════════════
