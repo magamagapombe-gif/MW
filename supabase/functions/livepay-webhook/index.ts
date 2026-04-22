@@ -1,16 +1,14 @@
 // supabase/functions/livepay-webhook/index.ts
-// Receives LivePay payment status webhooks
+// Handles LivePay callbacks for: registration, deposit, withdrawal
 // Deploy: supabase functions deploy livepay-webhook --no-verify-jwt
-//
-// Set this URL in your LivePay dashboard as the webhook URL:
-// https://<project-ref>.supabase.co/functions/v1/livepay-webhook
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// The exact URL registered in the LivePay dashboard — used in signature check
-const WEBHOOK_URL = Deno.env.get("LIVEPAY_WEBHOOK_URL") ?? "";
+const WEBHOOK_URL    = Deno.env.get("LIVEPAY_WEBHOOK_URL") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("LIVEPAY_WEBHOOK_SECRET") ?? "";
+
+const REFERRAL_BONUS = 4000; // UGX for first-level referrer on registration
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -26,9 +24,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
 
-  // ── Signature Verification ───────────────────────────────────────────
-  // LivePay sends:   X-Webhook-Signature: t=TIMESTAMP,v=HEX_SHA256
-  // Signed string:   webhook_url + timestamp + status + customer_reference + internal_reference
+  // ── Signature verification ────────────────────────────────────────────
   if (WEBHOOK_SECRET && WEBHOOK_URL) {
     const sigHeader = req.headers.get("x-webhook-signature") ?? "";
     const parts = sigHeader.split(",");
@@ -39,7 +35,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Invalid signature format" }), { status: 400 });
     }
 
-    // Reject if timestamp is older than 5 minutes (replay protection)
     if (Math.abs(Date.now() / 1000 - parseInt(timestamp, 10)) > 300) {
       return new Response(JSON.stringify({ error: "Expired timestamp" }), { status: 400 });
     }
@@ -58,7 +53,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401 });
     }
   }
-  // ─────────────────────────────────────────────────────────────────────
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -69,14 +63,11 @@ serve(async (req) => {
   const customerRef = String(payload.customer_reference ?? "");
   const internalRef = String(payload.internal_reference ?? "");
 
-  if (!customerRef) {
-    return ok(); // return 200 so LivePay doesn't retry bad payloads
-  }
+  if (!customerRef) return ok();
 
-  // Find the transaction by our reference
   const { data: transaction } = await supabase
     .from("transactions")
-    .select("id, user_id, type, amount, status")
+    .select("id, user_id, type, amount, status, category")
     .eq("reference", customerRef)
     .maybeSingle();
 
@@ -85,12 +76,10 @@ serve(async (req) => {
     return ok();
   }
 
-  // Idempotency: skip already-processed transactions
-  if (transaction.status !== "pending") {
-    return ok();
-  }
+  // Idempotency
+  if (transaction.status !== "pending") return ok();
 
-  // ── Handle SUCCESS ────────────────────────────────────────────────────
+  // ── SUCCESS ───────────────────────────────────────────────────────────
   if (status === "Success") {
     await supabase
       .from("transactions")
@@ -98,13 +87,22 @@ serve(async (req) => {
       .eq("id", transaction.id);
 
     if (transaction.type === "registration") {
-      // Activate the user
+      // Activate + assign Early Bird tier + 30 day window
+      const earlyBirdExpires = new Date();
+      earlyBirdExpires.setDate(earlyBirdExpires.getDate() + 30);
+
       await supabase
         .from("profiles")
-        .update({ is_active: true, updated_at: new Date().toISOString() })
+        .update({
+          is_active: true,
+          vault_plan_id: "early_bird",
+          vault_activated_at: new Date().toISOString(),
+          early_bird_expires_at: earlyBirdExpires.toISOString(),
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", transaction.user_id);
 
-      // Credit referrer if applicable
+      // Credit referrer (goes to referral_earnings, NOT balance)
       const { data: profile } = await supabase
         .from("profiles")
         .select("referred_by")
@@ -112,47 +110,57 @@ serve(async (req) => {
         .single();
 
       if (profile?.referred_by) {
-        const BONUS = 4000;
         const bonusRef = `MWBON${transaction.user_id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
 
-        await supabase.rpc("increment_balance", {
-          p_user_id: profile.referred_by,
-          p_amount: BONUS,
+        await supabase.rpc("increment_category", {
+          p_user_id:  profile.referred_by,
+          p_category: "referral_earnings",
+          p_amount:   REFERRAL_BONUS,
         });
 
         await supabase.from("transactions").insert({
           user_id: profile.referred_by,
           type: "referral_bonus",
-          amount: BONUS,
+          amount: REFERRAL_BONUS,
+          category: "referral_earnings",
           status: "completed",
           reference: bonusRef,
           description: "Referral bonus",
         });
       }
+    } else if (transaction.type === "deposit") {
+      // Credit the user's `balance` (deposit wallet)
+      await supabase.rpc("increment_category", {
+        p_user_id:  transaction.user_id,
+        p_category: "balance",
+        p_amount:   transaction.amount,
+      });
     }
-    // Withdrawals already deducted at initiation — nothing more to do
+    // Withdrawals: already deducted at init; nothing more to do on success
   }
 
-  // ── Handle FAILED ─────────────────────────────────────────────────────
+  // ── FAILED ────────────────────────────────────────────────────────────
   if (status === "Failed") {
+    const reason = String(payload.message ?? "Payment failed");
     await supabase
       .from("transactions")
-      .update({ status: "failed", livepay_transaction_id: internalRef })
+      .update({ status: "failed", livepay_transaction_id: internalRef, description: reason })
       .eq("id", transaction.id);
 
     // Refund balance if a withdrawal failed
-    if (transaction.type === "withdrawal") {
-      await supabase.rpc("increment_balance", {
-        p_user_id: transaction.user_id,
-        p_amount: transaction.amount,
+    if (transaction.type === "withdrawal" && transaction.category) {
+      await supabase.rpc("increment_category", {
+        p_user_id:  transaction.user_id,
+        p_category: transaction.category,
+        p_amount:   transaction.amount,
       });
     }
+    // Deposits: nothing to refund (user was never charged successfully)
+    // Registration: user stays inactive
   }
 
   return ok();
 });
-
-// ── Helpers ────────────────────────────────────────────────────────────
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   const key = await crypto.subtle.importKey(
@@ -170,7 +178,7 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
 
 function ok() {
   return new Response(
-    JSON.stringify({ status: "received", message: "Webhook processed successfully" }),
+    JSON.stringify({ status: "received" }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
 }
