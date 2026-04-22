@@ -866,11 +866,11 @@ input, select, textarea { font-family: inherit; }
 
 <script>
 // ════════════════════════════════════════════════════════════
-//  CONFIGURATION — fill in your own values
+//  CONFIGURATION — PASTE YOUR ANON KEY BELOW
 // ════════════════════════════════════════════════════════════
-const SUPABASE_URL        = 'https://lwzupqjsnhgimhclxsyg.supabase.co';           // e.g. https://xxxx.supabase.co
-const SUPABASE_ANON_KEY   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3enVwcWpzbmhnaW1oY2x4c3lnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Njk2MjAsImV4cCI6MjA5MjQ0NTYyMH0.C5pFpOsJBF_lUzJejf_UAiKP7hOBKZ1s1I5BRHHEX6k';
-const APP_URL             = window.location.origin;         // auto-detected
+const SUPABASE_URL        = 'https://lwzupqjsnhgimhclxsyg.supabase.co';
+const SUPABASE_ANON_KEY   = 'PASTE_YOUR_ANON_KEY_HERE';   // <-- from Supabase → Settings → API
+const APP_URL             = window.location.origin;
 
 // ════════════════════════════════════════════════════════════
 //  SUPABASE CLIENT
@@ -986,7 +986,18 @@ function goToStep2() {
   if (!phone) { showAlert(alert, 'Please enter your phone number'); return; }
   if (!network) { showAlert(alert, 'Please select MTN or Airtel'); return; }
 
-  regData.phone   = phone;
+  // Normalize to 256XXXXXXXXX format and validate
+  const digits = phone.replace(/\D/g, '');
+  let normalized = digits;
+  if (normalized.startsWith('0')) normalized = '256' + normalized.slice(1);
+  else if (!normalized.startsWith('256')) normalized = '256' + normalized;
+
+  if (normalized.length !== 12) {
+    showAlert(alert, 'Phone number must be 10 digits (e.g. 0702377999)');
+    return;
+  }
+
+  regData.phone   = normalized;
   regData.network = network;
 
   document.getElementById('reg-step-1').classList.add('hidden');
@@ -1045,6 +1056,11 @@ async function initiatePayment() {
   hideAlert(alert);
 
   if (!currentUser) { showPage('auth'); return; }
+
+  if (!regData.fullName || !regData.phone || !regData.network) {
+    showAlert(alert, 'Missing registration info. Please go back and complete the steps.');
+    return;
+  }
 
   setLoading(btn, true, 'Initiating payment…');
 
@@ -1142,14 +1158,32 @@ async function loadProfileAndRoute() {
 
   currentProfile = profile;
 
+  // Seed regData from auth + profile so payment call never has empty fields
+  regData.email = currentUser.email || '';
+  if (profile) {
+    regData.fullName     = profile.full_name || '';
+    regData.phone        = profile.phone_number || '';
+    regData.network      = profile.network || '';
+  }
+
   if (!profile) {
-    // Profile doesn't exist yet — go to registration
+    // No profile yet — make sure we have a full name
+    if (!regData.fullName) {
+      const name = prompt('Please enter your full name to continue:');
+      if (!name || !name.trim()) {
+        await sb.auth.signOut();
+        currentUser = null;
+        showPage('landing');
+        return;
+      }
+      regData.fullName = name.trim();
+    }
     showPage('register');
     return;
   }
 
   if (!profile.is_active) {
-    // Profile exists but not paid yet
+    // Profile exists but not paid yet — fullName already loaded above
     showPage('register');
     return;
   }
