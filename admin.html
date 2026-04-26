@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>MW Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;700;800&family=DM+Sans:wght@400;500;600;700&family=DM+Mono&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root {
+  --bg:#07100D; --bg-2:#0C1A14; --surface:#111E18; --surface-2:#162419;
+  --border:rgba(170,255,69,0.12); --border-2:rgba(255,255,255,0.06);
+  --lime:#AAFF45; --lime-dim:rgba(170,255,69,0.15); --lime-glow:rgba(170,255,69,0.35);
+  --text:#E0EBE5; --text-2:rgba(224,235,229,0.6); --text-3:rgba(224,235,229,0.35);
+  --error:#FF6B6B; --error-dim:rgba(255,107,107,0.12);
+  --gold:#FFD166; --gold-dim:rgba(255,209,102,0.12);
+  --green:#4BE38C; --green-dim:rgba(75,227,140,0.12);
+  --radius:10px;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'DM Sans',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; }
+button { cursor:pointer; font-family:inherit; border:none; outline:none; background:none; color:inherit; }
+input, select, textarea { font-family:inherit; outline:none; }
+a { color:var(--lime); text-decoration:none; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { padding:10px; text-align:left; border-bottom:1px solid var(--border-2); }
+th { color:var(--text-2); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:0.06em; background:var(--bg-2); position:sticky; top:0; }
+.hidden { display:none !important; }
+
+.layout { display:grid; grid-template-columns:240px 1fr; min-height:100vh; }
+@media (max-width:768px) { .layout { grid-template-columns:1fr; } .sidebar { position:fixed; left:0; top:0; bottom:0; width:240px; transform:translateX(-100%); transition:transform 0.3s; z-index:1000; } .sidebar.open { transform:translateX(0); } .sb-toggle { display:flex !important; } }
+
+.sidebar {
+  background:var(--surface); border-right:1px solid var(--border-2);
+  padding:20px 0; display:flex; flex-direction:column;
+}
+.sb-brand { padding:0 20px 20px; font-family:'Sora',sans-serif; font-size:20px; font-weight:800; color:var(--lime); }
+.sb-nav { flex:1; }
+.sb-item {
+  display:flex; align-items:center; gap:10px; padding:12px 20px; width:100%;
+  text-align:left; font-size:14px; font-weight:500; color:var(--text-2);
+  border-left:3px solid transparent; transition:all 0.15s;
+}
+.sb-item:hover { color:var(--text); background:var(--bg-2); }
+.sb-item.active { color:var(--lime); background:var(--lime-dim); border-left-color:var(--lime); }
+.sb-item-icon { font-size:18px; width:22px; }
+.sb-footer { padding:16px 20px; border-top:1px solid var(--border-2); font-size:12px; color:var(--text-3); }
+
+.main { padding:24px; overflow-x:auto; }
+.topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; gap:12px; }
+.title { font-family:'Sora',sans-serif; font-size:22px; font-weight:700; }
+.sb-toggle { display:none; padding:8px 12px; background:var(--surface); border:1px solid var(--border-2); border-radius:8px; }
+
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:9px 14px; border-radius:8px; font-size:13px; font-weight:600; transition:all 0.15s; }
+.btn:active:not(:disabled) { transform:scale(0.97); }
+.btn-primary { background:var(--lime); color:#0A1A0F; font-weight:700; }
+.btn-primary:hover { background:#BFFF66; }
+.btn-secondary { background:transparent; border:1px solid var(--border-2); color:var(--text); }
+.btn-secondary:hover { border-color:var(--lime); color:var(--lime); }
+.btn-danger { background:var(--error-dim); color:var(--error); }
+.btn-danger:hover { background:rgba(255,107,107,0.2); }
+.btn-success { background:var(--green-dim); color:var(--green); }
+.btn-warning { background:var(--gold-dim); color:var(--gold); }
+.btn-sm { padding:6px 10px; font-size:11px; }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+.card { background:var(--surface); border:1px solid var(--border-2); border-radius:12px; padding:18px; margin-bottom:14px; }
+
+.input { padding:9px 12px; background:var(--bg-2); border:1px solid var(--border-2); border-radius:8px; color:var(--text); font-size:13px; width:100%; }
+.input:focus { border-color:var(--lime); }
+.input-row { display:grid; gap:8px; }
+
+.search-bar { display:flex; gap:8px; margin-bottom:14px; }
+.search-bar .input { flex:1; }
+
+.stat-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:20px; }
+.stat-card { background:linear-gradient(135deg, var(--surface-2), var(--surface)); border:1px solid var(--border-2); border-radius:12px; padding:16px; }
+.stat-label { font-size:11px; font-weight:700; color:var(--text-3); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
+.stat-value { font-family:'Sora',sans-serif; font-size:24px; font-weight:700; color:var(--lime); font-variant-numeric:tabular-nums; }
+.stat-sub { font-size:11px; color:var(--text-2); margin-top:4px; }
+
+.badge { display:inline-flex; padding:2px 8px; border-radius:99px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+.badge-success { background:var(--green-dim); color:var(--green); }
+.badge-warning { background:var(--gold-dim); color:var(--gold); }
+.badge-error { background:var(--error-dim); color:var(--error); }
+.badge-info { background:var(--lime-dim); color:var(--lime); }
+
+.modal-bg { position:fixed; inset:0; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:1000; display:flex; align-items:center; justify-content:center; padding:20px; }
+.modal { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px; max-width:480px; width:100%; max-height:90vh; overflow-y:auto; }
+.modal-title { font-family:'Sora',sans-serif; font-size:18px; font-weight:700; margin-bottom:14px; }
+.field { margin-bottom:12px; }
+.field-label { display:block; font-size:11px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px; }
+
+.modal-actions { display:flex; gap:10px; margin-top:18px; justify-content:flex-end; }
+
+.toast { position:fixed; top:20px; right:20px; background:var(--surface-2); padding:12px 18px; border-radius:8px; border-left:3px solid var(--lime); z-index:9999; font-size:13px; box-shadow:0 6px 24px rgba(0,0,0,0.5); }
+.toast-error { border-left-color:var(--error); }
+.toast-success { border-left-color:var(--green); }
+
+.empty { text-align:center; padding:30px 20px; color:var(--text-3); font-size:13px; }
+.scroll-x { overflow-x:auto; }
+.spinner { width:16px; height:16px; border:2px solid var(--lime-dim); border-top-color:var(--lime); border-radius:50%; animation:spin 0.8s linear infinite; display:inline-block; vertical-align:middle; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.tx-cat-balance { color:var(--lime); }
+.tx-cat-task_earnings { color:var(--gold); }
+.tx-cat-referral_earnings { color:var(--green); }
+.tx-cat-sacco_earnings { color:#7BD8FF; }
+
+/* Login page */
+#login-page { display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+.login-card { width:100%; max-width:360px; }
+</style>
+</head>
+<body>
+
+<!-- ─── LOGIN PAGE ─── -->
+<div id="login-page">
+  <div class="card login-card">
+    <h1 style="font-family:'Sora',sans-serif; font-size:24px; color:var(--lime); margin-bottom:6px;">MW Admin</h1>
+    <p style="font-size:13px; color:var(--text-2); margin-bottom:18px;">Sign in with your admin account</p>
+    <div id="login-alert" class="card hidden" style="border-color:rgba(255,107,107,0.3); background:var(--error-dim); color:var(--error); margin-bottom:14px; padding:12px; font-size:13px;"></div>
+    <form onsubmit="adminLogin(event)">
+      <div class="field">
+        <label class="field-label">Email</label>
+        <input type="email" id="login-email" class="input" required/>
+      </div>
+      <div class="field">
+        <label class="field-label">Password</label>
+        <input type="password" id="login-password" class="input" required/>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;" id="login-btn">Sign In</button>
+    </form>
+    <p style="margin-top:14px; font-size:11px; color:var(--text-3); text-align:center;">If you're not an admin, you'll be denied.</p>
+  </div>
+</div>
+
+<!-- ─── ADMIN APP ─── -->
+<div id="admin-app" class="layout hidden">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-brand">⚡ MW Admin</div>
+    <div class="sb-nav">
+      <button class="sb-item active" data-section="stats"        onclick="showSection('stats')"><span class="sb-item-icon">📊</span>Overview</button>
+      <button class="sb-item"        data-section="users"        onclick="showSection('users')"><span class="sb-item-icon">👥</span>Users</button>
+      <button class="sb-item"        data-section="transactions" onclick="showSection('transactions')"><span class="sb-item-icon">💸</span>Transactions</button>
+      <button class="sb-item"        data-section="tasks"        onclick="showSection('tasks')"><span class="sb-item-icon">✅</span>Tasks</button>
+      <button class="sb-item"        data-section="vault-plans"  onclick="showSection('vault-plans')"><span class="sb-item-icon">💎</span>Vault Plans</button>
+      <button class="sb-item"        data-section="sacco-plans"  onclick="showSection('sacco-plans')"><span class="sb-item-icon">🏦</span>SACCO Plans</button>
+      <button class="sb-item"        data-section="maintenance"  onclick="showSection('maintenance')"><span class="sb-item-icon">🛠️</span>Maintenance</button>
+    </div>
+    <div class="sb-footer">
+      <div id="admin-name">—</div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px;width:100%;" onclick="adminLogout()">Sign Out</button>
+      <a href="/" style="display:block; margin-top:8px; font-size:11px;">← Back to app</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <button class="sb-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
+      <h1 class="title" id="section-title">Overview</h1>
+      <button class="btn btn-secondary btn-sm" onclick="reloadCurrentSection()">↻ Refresh</button>
+    </div>
+
+    <!-- ─── STATS ─── -->
+    <section id="section-stats" class="section">
+      <div class="stat-grid" id="stat-grid"><div class="empty"><span class="spinner"></span> Loading…</div></div>
+      <div class="card">
+        <h3 style="font-family:'Sora',sans-serif; font-size:15px; margin-bottom:12px;">Quick Actions</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn btn-warning btn-sm" onclick="clearStuckPendings()">Clear Stuck Pendings</button>
+          <button class="btn btn-secondary btn-sm" onclick="showSection('users')">Manage Users →</button>
+          <button class="btn btn-secondary btn-sm" onclick="showSection('transactions')">View Transactions →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── USERS ─── -->
+    <section id="section-users" class="section hidden">
+      <div class="search-bar">
+        <input type="search" id="user-search" class="input" placeholder="Search by name, email, phone, or referral code…" oninput="debouncedLoadUsers()"/>
+      </div>
+      <div class="card scroll-x" style="padding:0;">
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Email</th><th>Phone</th><th>Plan</th>
+              <th>Balance</th><th>Refs</th><th>Tasks</th><th>SACCO</th>
+              <th>Status</th><th>Joined</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody"><tr><td colspan="11" class="empty"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── TRANSACTIONS ─── -->
+    <section id="section-transactions" class="section hidden">
+      <div class="search-bar">
+        <select id="tx-status-filter" class="input" style="width:auto;" onchange="loadTransactions()">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="completed">Completed</option>
+          <option value="failed">Failed</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadTransactions()">Filter</button>
+      </div>
+      <div class="card scroll-x" style="padding:0;">
+        <table>
+          <thead>
+            <tr>
+              <th>When</th><th>User</th><th>Type</th><th>Amount</th><th>Cat</th>
+              <th>Status</th><th>Ref</th><th>Description</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tx-tbody"><tr><td colspan="9" class="empty"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── TASKS ─── -->
+    <section id="section-tasks" class="section hidden">
+      <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
+        <button class="btn btn-primary btn-sm" onclick="openTaskEditor()">+ Add Task</button>
+      </div>
+      <div class="card scroll-x" style="padding:0;">
+        <table>
+          <thead><tr><th>Title</th><th>Type</th><th>Reward</th><th>Min Plan</th><th>Duration</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody id="tasks-tbody"><tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── VAULT PLANS ─── -->
+    <section id="section-vault-plans" class="section hidden">
+      <div class="card scroll-x" style="padding:0;">
+        <table>
+          <thead><tr><th>Plan</th><th>Price</th><th>Tasks/Day</th><th>UGX/Task</th><th>Monthly</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody id="vp-tbody"><tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── SACCO PLANS ─── -->
+    <section id="section-sacco-plans" class="section hidden">
+      <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
+        <button class="btn btn-primary btn-sm" onclick="openSaccoEditor()">+ Add SACCO Plan</button>
+      </div>
+      <div class="card scroll-x" style="padding:0;">
+        <table>
+          <thead><tr><th>ID</th><th>Name</th><th>Range</th><th>Days</th><th>Return</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody id="sp-tbody"><tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ─── MAINTENANCE ─── -->
+    <section id="section-maintenance" class="section hidden">
+      <div class="card">
+        <h3 style="font-family:'Sora',sans-serif; font-size:15px; margin-bottom:6px;">Stuck Pendings</h3>
+        <p style="font-size:13px; color:var(--text-2); margin-bottom:12px;">Mark all transactions older than 5 minutes still in pending as failed. Refunds withdrawal balances.</p>
+        <button class="btn btn-warning btn-sm" onclick="clearStuckPendings()">Clear Now</button>
+      </div>
+      <div class="card">
+        <h3 style="font-family:'Sora',sans-serif; font-size:15px; margin-bottom:6px;">Wipe All Users</h3>
+        <p style="font-size:13px; color:var(--error); margin-bottom:12px;">⚠️ Deletes ALL non-admin users, transactions, completions, and SACCO investments. Catalogs (vault plans, tasks, sacco plans) survive.</p>
+        <button class="btn btn-danger btn-sm" onclick="wipeAllUsers()">Wipe All</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  CONFIG  — paste your anon key
+// ════════════════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://lwzupqjsnhgimhclxsyg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3enVwcWpzbmhnaW1oY2x4c3lnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Njk2MjAsImV4cCI6MjA5MjQ0NTYyMH0.C5pFpOsJBF_lUzJejf_UAiKP7hOBKZ1s1I5BRHHEX6k';
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let currentSection = 'stats';
+let currentAdmin = null;
+let usersCache = [];
+
+// ── TOASTS ──
+function toast(msg, type='info') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ── AUTH ──
+async function adminLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const alertEl = document.getElementById('login-alert');
+  alertEl.classList.add('hidden');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Signing in…';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+  if (error) { alertEl.textContent = error.message; alertEl.classList.remove('hidden'); return; }
+  await checkAdminAndShow();
+}
+
+async function checkAdminAndShow() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) { showLogin(); return; }
+  const { data: profile } = await sb.from('profiles').select('full_name, is_admin').eq('id', user.id).maybeSingle();
+  if (!profile?.is_admin) {
+    const alertEl = document.getElementById('login-alert');
+    alertEl.textContent = 'This account is not an admin.';
+    alertEl.classList.remove('hidden');
+    await sb.auth.signOut();
+    showLogin();
+    return;
+  }
+  currentAdmin = { ...user, full_name: profile.full_name };
+  document.getElementById('admin-name').textContent = profile.full_name || user.email;
+  document.getElementById('login-page').classList.add('hidden');
+  document.getElementById('admin-app').classList.remove('hidden');
+  showSection('stats');
+}
+
+async function adminLogout() {
+  await sb.auth.signOut();
+  currentAdmin = null;
+  showLogin();
+}
+
+function showLogin() {
+  document.getElementById('admin-app').classList.add('hidden');
+  document.getElementById('login-page').classList.remove('hidden');
+}
+
+// ── SECTION ROUTING ──
+function showSection(id) {
+  currentSection = id;
+  document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+  document.getElementById('section-' + id).classList.remove('hidden');
+  document.querySelectorAll('.sb-item').forEach(b => b.classList.toggle('active', b.dataset.section === id));
+  document.getElementById('sidebar').classList.remove('open');
+  const titles = {
+    'stats':'Overview', 'users':'Users', 'transactions':'Transactions',
+    'tasks':'Tasks', 'vault-plans':'Vault Plans', 'sacco-plans':'SACCO Plans', 'maintenance':'Maintenance'
+  };
+  document.getElementById('section-title').textContent = titles[id] || id;
+  reloadCurrentSection();
+}
+
+function reloadCurrentSection() {
+  const map = {
+    'stats': loadStats,
+    'users': loadUsers,
+    'transactions': loadTransactions,
+    'tasks': loadTasks,
+    'vault-plans': loadVaultPlans,
+    'sacco-plans': loadSaccoPlans,
+  };
+  if (map[currentSection]) map[currentSection]();
+}
+
+// ── STATS ──
+async function loadStats() {
+  const grid = document.getElementById('stat-grid');
+  grid.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  const { data, error } = await sb.rpc('admin_stats');
+  if (error) { grid.innerHTML = `<div class="empty">Error: ${error.message}</div>`; return; }
+  const stats = [
+    { label:'Total Users',        value: data.total_users,        sub:`${data.active_users} active · ${data.banned_users} banned` },
+    { label:'Signups Today',      value: data.signups_today,      sub:`${data.signups_this_week} this week` },
+    { label:'Vault Revenue',      value: `UGX ${Number(data.total_vault_revenue).toLocaleString()}` },
+    { label:'Total Deposits',     value: `UGX ${Number(data.total_deposits).toLocaleString()}` },
+    { label:'Total Withdrawals',  value: `UGX ${Number(data.total_withdrawals).toLocaleString()}` },
+    { label:'Tasks Completed Today', value: data.tasks_today },
+    { label:'Pending Transactions', value: data.pending_count, sub: data.stuck_pendings > 0 ? `${data.stuck_pendings} stuck (>5min)` : 'all fresh' },
+  ];
+  grid.innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value">${s.value}</div>
+      ${s.sub ? `<div class="stat-sub">${s.sub}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+// ── USERS ──
+let userSearchTimer = null;
+function debouncedLoadUsers() {
+  clearTimeout(userSearchTimer);
+  userSearchTimer = setTimeout(loadUsers, 250);
+}
+
+async function loadUsers() {
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = '<tr><td colspan="11" class="empty"><span class="spinner"></span></td></tr>';
+  const search = document.getElementById('user-search').value.trim();
+  const { data, error } = await sb.rpc('admin_list_users', { p_search: search, p_limit: 200, p_offset: 0 });
+  if (error) { tbody.innerHTML = `<tr><td colspan="11" class="empty">Error: ${error.message}</td></tr>`; return; }
+  usersCache = data || [];
+  if (!data?.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No users.</td></tr>'; return; }
+  tbody.innerHTML = data.map(u => {
+    const status = u.is_banned ? '<span class="badge badge-error">Banned</span>'
+                 : u.has_purchased_plan ? '<span class="badge badge-success">Active</span>'
+                 : '<span class="badge badge-warning">Free</span>';
+    const adminTag = u.is_admin ? ' <span class="badge badge-info">Admin</span>' : '';
+    return `<tr>
+      <td><strong>${escapeHtml(u.full_name || '')}</strong>${adminTag}</td>
+      <td>${escapeHtml(u.email || '')}</td>
+      <td>${u.phone_number || '—'}</td>
+      <td>${u.vault_plan_id || '—'}</td>
+      <td style="font-family:'DM Mono',monospace;">${Number(u.balance).toLocaleString()}</td>
+      <td style="font-family:'DM Mono',monospace;">${Number(u.referral_earnings).toLocaleString()}</td>
+      <td style="font-family:'DM Mono',monospace;">${Number(u.task_earnings).toLocaleString()}</td>
+      <td style="font-family:'DM Mono',monospace;">${Number(u.sacco_earnings).toLocaleString()}</td>
+      <td>${status}</td>
+      <td style="white-space:nowrap;">${new Date(u.created_at).toLocaleDateString()}</td>
+      <td>
+        <div style="display:flex; gap:4px; flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" onclick="openAdjustBalance('${u.id}','${escapeAttr(u.full_name)}')">Adjust</button>
+          ${!u.has_purchased_plan ? `<button class="btn btn-success btn-sm" onclick="openForceActivate('${u.id}','${escapeAttr(u.full_name)}')">Activate</button>` : ''}
+          ${u.is_banned
+            ? `<button class="btn btn-success btn-sm" onclick="setBanned('${u.id}', false)">Unban</button>`
+            : `<button class="btn btn-warning btn-sm" onclick="setBanned('${u.id}', true)">Ban</button>`}
+          ${u.is_admin ? '' : `<button class="btn btn-danger btn-sm" onclick="deleteUser('${u.id}','${escapeAttr(u.full_name)}')">Del</button>`}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function setBanned(userId, banned) {
+  if (!confirm(banned ? 'Ban this user? They will be unable to make changes.' : 'Unban this user?')) return;
+  const { error } = await sb.rpc('admin_set_banned', { p_user_id: userId, p_banned: banned });
+  if (error) { toast(error.message, 'error'); return; }
+  toast(banned ? 'User banned' : 'User unbanned', 'success');
+  loadUsers();
+}
+
+async function deleteUser(userId, name) {
+  if (!confirm(`PERMANENTLY DELETE "${name}"? This wipes their auth account, profile, transactions. Cannot be undone.`)) return;
+  if (!confirm('Are you absolutely sure? Type-confirm not required, but this is irreversible.')) return;
+  const { data: { session } } = await sb.auth.getSession();
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/admin-delete-user`, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${session.access_token}`, 'apikey': SUPABASE_ANON_KEY },
+    body: JSON.stringify({ user_id: userId }),
+  });
+  const result = await res.json();
+  if (!result.success) { toast(result.error || 'Delete failed', 'error'); return; }
+  toast('User deleted', 'success');
+  loadUsers();
+}
+
+function openAdjustBalance(userId, name) {
+  const user = usersCache.find(u => u.id === userId);
+  showModal(`Adjust Balance — ${name}`, `
+    <div class="field">
+      <label class="field-label">Category</label>
+      <select id="adj-cat" class="input">
+        <option value="balance">Deposit Balance (current: ${Number(user.balance).toLocaleString()})</option>
+        <option value="task_earnings">Task Earnings (current: ${Number(user.task_earnings).toLocaleString()})</option>
+        <option value="referral_earnings">Referral Earnings (current: ${Number(user.referral_earnings).toLocaleString()})</option>
+        <option value="sacco_earnings">SACCO Earnings (current: ${Number(user.sacco_earnings).toLocaleString()})</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label">Amount (use negative to deduct)</label>
+      <input type="number" id="adj-amt" class="input" placeholder="e.g. 5000 or -2000"/>
+    </div>
+    <div class="field">
+      <label class="field-label">Reason (logged)</label>
+      <input type="text" id="adj-reason" class="input" placeholder="e.g. Refund for failed withdrawal"/>
+    </div>
+  `, async () => {
+    const cat = document.getElementById('adj-cat').value;
+    const amt = parseInt(document.getElementById('adj-amt').value, 10);
+    const reason = document.getElementById('adj-reason').value.trim();
+    if (!Number.isInteger(amt)) { toast('Amount must be a whole number', 'error'); return false; }
+    if (!reason) { toast('Reason required', 'error'); return false; }
+    const { data, error } = await sb.rpc('admin_adjust_balance', { p_user_id: userId, p_category: cat, p_delta: amt, p_reason: reason });
+    if (error || data?.error) { toast(error?.message || data.error, 'error'); return false; }
+    toast(`New ${cat}: ${Number(data.new_balance).toLocaleString()}`, 'success');
+    loadUsers();
+    return true;
+  });
+}
+
+async function openForceActivate(userId, name) {
+  const { data: plans } = await sb.from('vault_plans').select('*').eq('is_active', true).order('sort_order');
+  const opts = (plans || []).map(p => `<option value="${p.id}">${p.emoji || ''} ${p.display_name} (UGX ${p.price.toLocaleString()})</option>`).join('');
+  showModal(`Force Activate — ${name}`, `
+    <p style="font-size:13px; color:var(--text-2); margin-bottom:14px;">Skips payment. Marks user as having purchased the selected plan.</p>
+    <div class="field">
+      <label class="field-label">Plan to Assign</label>
+      <select id="fa-plan" class="input">${opts}</select>
+    </div>
+  `, async () => {
+    const planId = document.getElementById('fa-plan').value;
+    const { error } = await sb.rpc('admin_force_activate', { p_user_id: userId, p_plan_id: planId });
+    if (error) { toast(error.message, 'error'); return false; }
+    toast('User activated', 'success');
+    loadUsers();
+    return true;
+  });
+}
+
+// ── TRANSACTIONS ──
+async function loadTransactions() {
+  const tbody = document.getElementById('tx-tbody');
+  tbody.innerHTML = '<tr><td colspan="9" class="empty"><span class="spinner"></span></td></tr>';
+  const status = document.getElementById('tx-status-filter').value;
+  const { data, error } = await sb.rpc('admin_list_transactions', { p_limit: 200, p_offset: 0, p_status: status || null });
+  if (error) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${error.message}</td></tr>`; return; }
+  if (!data?.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No transactions.</td></tr>'; return; }
+  tbody.innerHTML = data.map(tx => {
+    const statusBadge = tx.status === 'completed' ? '<span class="badge badge-success">Completed</span>'
+                     : tx.status === 'failed' ? '<span class="badge badge-error">Failed</span>'
+                     : '<span class="badge badge-warning">Pending</span>';
+    return `<tr>
+      <td style="white-space:nowrap;">${new Date(tx.created_at).toLocaleString()}</td>
+      <td><strong>${escapeHtml(tx.full_name || '—')}</strong><br/><span style="font-size:10px; color:var(--text-3);">${tx.phone_number || ''}</span></td>
+      <td>${tx.type}</td>
+      <td style="font-family:'DM Mono',monospace; font-weight:700;">${Number(tx.amount).toLocaleString()}${tx.fee ? ` <span style="color:var(--text-3);">(fee ${tx.fee})</span>` : ''}</td>
+      <td><span class="tx-cat-${tx.category || ''}">${tx.category || '—'}</span></td>
+      <td>${statusBadge}</td>
+      <td style="font-family:'DM Mono',monospace; font-size:10px;">${tx.reference}</td>
+      <td style="font-size:11px; color:var(--text-2); max-width:200px;">${escapeHtml(tx.description || '')}</td>
+      <td>
+        ${tx.status === 'pending' ? `
+          <button class="btn btn-success btn-sm" onclick="setTxStatus('${tx.id}','completed')">✓</button>
+          <button class="btn btn-danger btn-sm" onclick="setTxStatus('${tx.id}','failed')">✗</button>
+        ` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function setTxStatus(txId, status) {
+  if (!confirm(`Mark transaction as ${status}? This bypasses webhook logic.`)) return;
+  const { error } = await sb.rpc('admin_set_tx_status', { p_tx_id: txId, p_status: status });
+  if (error) { toast(error.message, 'error'); return; }
+  toast(`Marked ${status}`, 'success');
+  loadTransactions();
+}
+
+async function clearStuckPendings() {
+  if (!confirm('Mark all pendings older than 5 min as failed?')) return;
+  const { data, error } = await sb.rpc('admin_clear_stuck_pendings');
+  if (error) { toast(error.message, 'error'); return; }
+  toast(`Cleared ${data.cleared} stuck pendings`, 'success');
+  if (currentSection === 'transactions') loadTransactions();
+  if (currentSection === 'stats') loadStats();
+}
+
+// ── TASKS ──
+async function loadTasks() {
+  const tbody = document.getElementById('tasks-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>';
+  const { data, error } = await sb.from('tasks').select('*').order('created_at', { ascending: false });
+  if (error) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${error.message}</td></tr>`; return; }
+  if (!data?.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No tasks. Add one above.</td></tr>'; return; }
+  tbody.innerHTML = data.map(t => `<tr>
+    <td><strong>${escapeHtml(t.title)}</strong><br/><span style="font-size:11px; color:var(--text-3);">${escapeHtml(t.description || '')}</span></td>
+    <td>${t.task_type}</td>
+    <td style="font-family:'DM Mono',monospace;">${Number(t.reward).toLocaleString()}</td>
+    <td>order ≥ ${t.min_plan_order}</td>
+    <td>${t.duration_sec}s</td>
+    <td>${t.is_active ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-error">No</span>'}</td>
+    <td>
+      <button class="btn btn-secondary btn-sm" onclick='openTaskEditor(${JSON.stringify(t)})'>Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteTask('${t.id}')">Del</button>
+    </td>
+  </tr>`).join('');
+}
+
+function openTaskEditor(task) {
+  const t = task || { id: null, title:'', description:'', task_type:'youtube', url:'', duration_sec:30, reward:500, min_plan_order:0, is_active:true };
+  showModal(t.id ? 'Edit Task' : 'New Task', `
+    <div class="field"><label class="field-label">Title</label><input id="t-title" class="input" value="${escapeAttr(t.title)}"/></div>
+    <div class="field"><label class="field-label">Description</label><input id="t-desc" class="input" value="${escapeAttr(t.description || '')}"/></div>
+    <div class="field"><label class="field-label">Type</label>
+      <select id="t-type" class="input">
+        <option value="youtube"${t.task_type==='youtube'?' selected':''}>YouTube video</option>
+        <option value="read"${t.task_type==='read'?' selected':''}>Article</option>
+        <option value="tiktok"${t.task_type==='tiktok'?' selected':''}>TikTok</option>
+        <option value="subscribe"${t.task_type==='subscribe'?' selected':''}>Subscribe</option>
+      </select>
+    </div>
+    <div class="field"><label class="field-label">URL (for video / tiktok / subscribe)</label><input id="t-url" class="input" value="${escapeAttr(t.url || '')}"/></div>
+    <div class="input-row" style="grid-template-columns:1fr 1fr 1fr; gap:8px;">
+      <div class="field"><label class="field-label">Duration (s)</label><input id="t-dur" type="number" class="input" value="${t.duration_sec}"/></div>
+      <div class="field"><label class="field-label">Reward (UGX)</label><input id="t-reward" type="number" class="input" value="${t.reward}"/></div>
+      <div class="field"><label class="field-label">Min Plan Order</label><input id="t-mpo" type="number" class="input" value="${t.min_plan_order}"/></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="t-active"${t.is_active?' checked':''}/> Active</label></div>
+  `, async () => {
+    const payload = {
+      p_id: t.id || null,
+      p_title: document.getElementById('t-title').value.trim(),
+      p_description: document.getElementById('t-desc').value.trim() || null,
+      p_task_type: document.getElementById('t-type').value,
+      p_url: document.getElementById('t-url').value.trim() || null,
+      p_duration_sec: parseInt(document.getElementById('t-dur').value, 10),
+      p_reward: parseInt(document.getElementById('t-reward').value, 10),
+      p_min_plan_order: parseInt(document.getElementById('t-mpo').value, 10),
+      p_is_active: document.getElementById('t-active').checked,
+    };
+    if (!payload.p_title) { toast('Title required', 'error'); return false; }
+    const { error } = await sb.rpc('admin_upsert_task', payload);
+    if (error) { toast(error.message, 'error'); return false; }
+    toast('Task saved', 'success');
+    loadTasks();
+    return true;
+  });
+}
+
+async function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+  const { error } = await sb.rpc('admin_delete_task', { p_id: id });
+  if (error) { toast(error.message, 'error'); return; }
+  toast('Task deleted', 'success');
+  loadTasks();
+}
+
+// ── VAULT PLANS ──
+async function loadVaultPlans() {
+  const tbody = document.getElementById('vp-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>';
+  const { data, error } = await sb.from('vault_plans').select('*').order('sort_order');
+  if (error) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${error.message}</td></tr>`; return; }
+  tbody.innerHTML = (data || []).map(p => `<tr>
+    <td><strong>${p.emoji || ''} ${escapeHtml(p.display_name)}</strong><br/><span style="font-size:10px; color:var(--text-3);">${p.id}</span></td>
+    <td style="font-family:'DM Mono',monospace;">UGX ${Number(p.price).toLocaleString()}</td>
+    <td>${p.tasks_per_day}</td>
+    <td>UGX ${Number(p.ugx_per_task).toLocaleString()}</td>
+    <td>UGX ${Number(p.monthly_est).toLocaleString()}</td>
+    <td>${p.is_active ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-error">No</span>'}</td>
+    <td><button class="btn btn-secondary btn-sm" onclick='openVaultEditor(${JSON.stringify(p)})'>Edit</button></td>
+  </tr>`).join('');
+}
+
+function openVaultEditor(p) {
+  showModal(`Edit ${p.display_name}`, `
+    <div class="field"><label class="field-label">Display Name</label><input id="v-name" class="input" value="${escapeAttr(p.display_name)}"/></div>
+    <div class="field"><label class="field-label">Emoji</label><input id="v-emoji" class="input" value="${escapeAttr(p.emoji || '')}"/></div>
+    <div class="field"><label class="field-label">Price (UGX)</label><input id="v-price" type="number" class="input" value="${p.price}"/></div>
+    <div class="input-row" style="grid-template-columns:1fr 1fr 1fr; gap:8px;">
+      <div class="field"><label class="field-label">Tasks/day</label><input id="v-tpd" type="number" class="input" value="${p.tasks_per_day}"/></div>
+      <div class="field"><label class="field-label">UGX/task</label><input id="v-upt" type="number" class="input" value="${p.ugx_per_task}"/></div>
+      <div class="field"><label class="field-label">Monthly est</label><input id="v-me" type="number" class="input" value="${p.monthly_est}"/></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="v-active"${p.is_active?' checked':''}/> Active</label></div>
+  `, async () => {
+    const payload = {
+      p_id: p.id,
+      p_display_name: document.getElementById('v-name').value.trim(),
+      p_emoji: document.getElementById('v-emoji').value,
+      p_price: parseInt(document.getElementById('v-price').value, 10),
+      p_tasks_per_day: parseInt(document.getElementById('v-tpd').value, 10),
+      p_ugx_per_task: parseInt(document.getElementById('v-upt').value, 10),
+      p_monthly_est: parseInt(document.getElementById('v-me').value, 10),
+      p_is_active: document.getElementById('v-active').checked,
+    };
+    const { error } = await sb.rpc('admin_update_vault_plan', payload);
+    if (error) { toast(error.message, 'error'); return false; }
+    toast('Plan updated', 'success');
+    loadVaultPlans();
+    return true;
+  });
+}
+
+// ── SACCO PLANS ──
+async function loadSaccoPlans() {
+  const tbody = document.getElementById('sp-tbody');
+  tbody.innerHTML = '<tr><td colspan="7" class="empty"><span class="spinner"></span></td></tr>';
+  const { data, error } = await sb.from('sacco_plans').select('*').order('sort_order');
+  if (error) { tbody.innerHTML = `<tr><td colspan="7" class="empty">${error.message}</td></tr>`; return; }
+  if (!data?.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No SACCO plans.</td></tr>'; return; }
+  tbody.innerHTML = data.map(p => `<tr>
+    <td>${p.id}</td>
+    <td><strong>${escapeHtml(p.display_name)}</strong></td>
+    <td style="font-family:'DM Mono',monospace;">${Number(p.min_amount).toLocaleString()} – ${Number(p.max_amount).toLocaleString()}</td>
+    <td>${p.duration_days}</td>
+    <td>${(Number(p.return_rate)*100).toFixed(1)}%</td>
+    <td>${p.is_active ? '<span class="badge badge-success">Yes</span>' : '<span class="badge badge-error">No</span>'}</td>
+    <td>
+      <button class="btn btn-secondary btn-sm" onclick='openSaccoEditor(${JSON.stringify(p)})'>Edit</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteSacco('${p.id}')">Del</button>
+    </td>
+  </tr>`).join('');
+}
+
+function openSaccoEditor(plan) {
+  const p = plan || { id:'', display_name:'', min_amount:10000, max_amount:100000, duration_days:7, return_rate:0.05, sort_order:99, is_active:true };
+  const isNew = !plan;
+  showModal(isNew ? 'New SACCO Plan' : `Edit ${p.display_name}`, `
+    <div class="field"><label class="field-label">ID (e.g. sacco_t1)</label><input id="s-id" class="input" value="${escapeAttr(p.id)}" ${isNew?'':'readonly'}/></div>
+    <div class="field"><label class="field-label">Display Name</label><input id="s-name" class="input" value="${escapeAttr(p.display_name)}"/></div>
+    <div class="input-row" style="grid-template-columns:1fr 1fr; gap:8px;">
+      <div class="field"><label class="field-label">Min (UGX)</label><input id="s-min" type="number" class="input" value="${p.min_amount}"/></div>
+      <div class="field"><label class="field-label">Max (UGX)</label><input id="s-max" type="number" class="input" value="${p.max_amount}"/></div>
+    </div>
+    <div class="input-row" style="grid-template-columns:1fr 1fr 1fr; gap:8px;">
+      <div class="field"><label class="field-label">Days</label><input id="s-days" type="number" class="input" value="${p.duration_days}"/></div>
+      <div class="field"><label class="field-label">Rate (0.05=5%)</label><input id="s-rate" type="number" step="0.01" class="input" value="${p.return_rate}"/></div>
+      <div class="field"><label class="field-label">Sort</label><input id="s-sort" type="number" class="input" value="${p.sort_order}"/></div>
+    </div>
+    <div class="field"><label><input type="checkbox" id="s-active"${p.is_active?' checked':''}/> Active</label></div>
+  `, async () => {
+    const payload = {
+      p_id: document.getElementById('s-id').value.trim(),
+      p_display_name: document.getElementById('s-name').value.trim(),
+      p_min_amount: parseInt(document.getElementById('s-min').value, 10),
+      p_max_amount: parseInt(document.getElementById('s-max').value, 10),
+      p_duration_days: parseInt(document.getElementById('s-days').value, 10),
+      p_return_rate: parseFloat(document.getElementById('s-rate').value),
+      p_sort_order: parseInt(document.getElementById('s-sort').value, 10),
+      p_is_active: document.getElementById('s-active').checked,
+    };
+    if (!payload.p_id || !payload.p_display_name) { toast('ID and name required', 'error'); return false; }
+    const { error } = await sb.rpc('admin_upsert_sacco_plan', payload);
+    if (error) { toast(error.message, 'error'); return false; }
+    toast('SACCO plan saved', 'success');
+    loadSaccoPlans();
+    return true;
+  });
+}
+
+async function deleteSacco(id) {
+  if (!confirm('Delete this SACCO plan?')) return;
+  const { error } = await sb.rpc('admin_delete_sacco_plan', { p_id: id });
+  if (error) { toast(error.message, 'error'); return; }
+  toast('Deleted', 'success');
+  loadSaccoPlans();
+}
+
+// ── MAINTENANCE ──
+async function wipeAllUsers() {
+  if (!confirm('⚠️ Wipe ALL non-admin users? This is irreversible.')) return;
+  if (!confirm('Are you ABSOLUTELY sure? Type-confirm not required, but every user will be gone.')) return;
+  // Use service role via SQL — but we can't from client. Just truncate via RPC.
+  const sql = `do $$
+    declare r record;
+    begin
+      -- Soft cleanup
+      delete from public.task_completions where user_id in (select id from public.profiles where is_admin = false);
+      delete from public.sacco_investments where user_id in (select id from public.profiles where is_admin = false);
+      delete from public.transactions where user_id in (select id from public.profiles where is_admin = false);
+      for r in (select id from public.profiles where is_admin = false) loop
+        delete from auth.users where id = r.id;
+      end loop;
+    end $$;`;
+  toast('Run this in Supabase SQL Editor (security): ' + sql.substring(0, 80) + '…', 'warning');
+  console.log('Run this SQL in Supabase to wipe all non-admin users:\n', sql);
+  alert('To wipe all non-admin users, copy the SQL from your browser console (F12) and run it in Supabase SQL Editor.\n\nWe do this server-side for safety.');
+}
+
+// ── MODAL HELPER ──
+function showModal(title, bodyHtml, onSave) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-title">${title}</div>
+      ${bodyHtml}
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-save">Save</button>
+      </div>
+    </div>
+  `;
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  document.body.appendChild(bg);
+  function close() { bg.remove(); }
+  document.getElementById('modal-cancel').onclick = close;
+  document.getElementById('modal-save').onclick = async () => {
+    const btn = document.getElementById('modal-save');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving…';
+    const ok = await onSave();
+    btn.disabled = false; btn.textContent = 'Save';
+    if (ok) close();
+  };
+}
+
+// ── HELPERS ──
+function escapeHtml(s) { return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function escapeAttr(s) { return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'"); }
+
+// ── BOOT ──
+(async function() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) await checkAdminAndShow();
+})();
+</script>
+</body>
+</html>
