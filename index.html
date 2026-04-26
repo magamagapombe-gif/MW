@@ -845,6 +845,20 @@ body::before {
           <button class="btn btn-ghost btn-sm" onclick="shareViaWhatsApp()">📱 WhatsApp</button>
         </div>
       </div>
+
+      <!-- Quick links -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;">
+        <button class="card" style="padding:16px;text-align:left;cursor:pointer;" onclick="showSection('referrals')">
+          <div style="font-size:24px;margin-bottom:6px;">🏆</div>
+          <div style="font-weight:700;font-size:13px;">Leaderboard</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:2px;">Weekly prizes</div>
+        </button>
+        <button class="card" style="padding:16px;text-align:left;cursor:pointer;" onclick="showSection('sacco')">
+          <div style="font-size:24px;margin-bottom:6px;">🏦</div>
+          <div style="font-weight:700;font-size:13px;">SACCO</div>
+          <div style="font-size:11px;color:var(--text-2);margin-top:2px;">Lock & earn</div>
+        </button>
+      </div>
     </div>
 
     <!-- VAULT -->
@@ -885,12 +899,24 @@ body::before {
     <!-- REFERRALS -->
     <div id="section-referrals" class="section">
       <h2 class="section-title">Referrals</h2>
-      <p class="section-sub">Earn UGX 4,000 per referral + weekly prizes</p>
+      <p class="section-sub">Earn UGX 4,000 per referral + tier salary + weekly prizes</p>
       <div class="balance-hero" style="padding:18px 22px;">
         <div class="balance-label">Total Referral Earnings</div>
         <div class="balance-value" id="ref-total-earnings" style="font-size:32px;">0</div>
         <div class="balance-currency">UGX</div>
       </div>
+
+      <!-- Tier card -->
+      <div class="card card-accent">
+        <div style="font-weight:700;margin-bottom:10px;">🏅 Career Tier</div>
+        <div id="tier-display" style="text-align:center;padding:14px 0;">
+          <div style="font-size:28px;margin-bottom:4px;" id="tier-emoji">—</div>
+          <div style="font-family:'Sora',sans-serif;font-size:18px;font-weight:700;" id="tier-name">—</div>
+          <div style="font-size:12px;color:var(--text-2);margin-top:4px;" id="tier-progress">—</div>
+        </div>
+        <div id="tier-monthly" style="text-align:center;padding:10px;background:var(--bg-2);border-radius:10px;font-size:13px;color:var(--text-2);">—</div>
+      </div>
+
       <div class="card">
         <div style="font-weight:700;margin-bottom:10px;">🔗 Your Referral Link</div>
         <div class="ref-link-box" id="ref-link-display">Loading…</div>
@@ -899,21 +925,14 @@ body::before {
           <button class="btn btn-secondary btn-sm" onclick="shareViaWhatsApp()">Share</button>
         </div>
       </div>
+
+      <!-- Weekly leaderboard -->
       <div class="card">
-        <div style="font-weight:700;margin-bottom:12px;">How it works</div>
-        <div class="info-row">
-          <span class="info-label">🎯 Each registration</span>
-          <span class="info-val">UGX 4,000</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">🏆 Weekly top referrer</span>
-          <span class="info-val">UGX 50,000</span>
-        </div>
-        <div class="info-row">
-          <span class="info-label">💎 Vault bonus (future)</span>
-          <span class="info-val">10%</span>
-        </div>
+        <div style="font-weight:700;margin-bottom:6px;">🏆 Weekly Leaderboard</div>
+        <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;">Top referrer this week wins UGX 50,000</div>
+        <div id="leaderboard-list" class="empty"><div class="empty-text">Loading…</div></div>
       </div>
+
       <div class="card">
         <div style="font-weight:700;margin-bottom:12px;">Your Referrals</div>
         <div id="referrals-list" class="empty"><div class="empty-text">Loading…</div></div>
@@ -989,10 +1008,19 @@ body::before {
     <!-- SACCO -->
     <div id="section-sacco" class="section">
       <h2 class="section-title">SACCO Savings</h2>
-      <p class="section-sub">Lock funds. Earn guaranteed returns. Withdraw on Mondays.</p>
-      <div class="card card-warning" style="font-size:13px;line-height:1.5;">
-        🚧 <strong>Coming soon in Phase 5.</strong> Choose a plan, lock your funds, and earn tiered returns. We'll notify you when this goes live.
+      <p class="section-sub">Lock funds. Earn returns. Withdraw on Mondays after maturity.</p>
+      <div id="sacco-alert" class="alert alert-error hidden"></div>
+
+      <div class="balance-hero" style="padding:18px 22px;margin-bottom:14px;">
+        <div class="balance-label">SACCO Earnings</div>
+        <div class="balance-value" id="sacco-earnings-val" style="font-size:30px;">0</div>
+        <div class="balance-currency">UGX · Withdrawable</div>
       </div>
+
+      <div id="sacco-active-list"></div>
+
+      <div style="font-family:'Sora',sans-serif;font-size:14px;font-weight:700;color:var(--text-2);margin:18px 0 10px;letter-spacing:0.04em;text-transform:uppercase;">Available Plans</div>
+      <div id="sacco-plans-list"><div class="empty"><div class="spinner" style="margin:0 auto;"></div></div></div>
     </div>
 
     <!-- PROFILE -->
@@ -1025,6 +1053,40 @@ body::before {
     <button class="nav-item"        data-section="wallet"    onclick="showSection('wallet')"><span class="nav-item-icon">💰</span>Wallet</button>
     <button class="nav-item"        data-section="profile"   onclick="showSection('profile')"><span class="nav-item-icon">👤</span>Profile</button>
   </nav>
+</div>
+
+<!-- SACCO Purchase Modal -->
+<div id="sacco-purchase-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeSaccoPurchase()">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="spm-title">—</div>
+    <p class="modal-sub" id="spm-info">—</p>
+    <div id="spm-alert" class="alert alert-error hidden"></div>
+
+    <div class="card card-accent">
+      <div class="info-row"><span class="info-label">Wallet balance</span><span class="info-val" id="spm-wallet">—</span></div>
+      <div class="info-row"><span class="info-label">Allowed range</span><span class="info-val" id="spm-range">—</span></div>
+    </div>
+
+    <div class="field">
+      <label class="field-label">Investment Amount (UGX)</label>
+      <input type="number" id="spm-amount" class="input-field"/>
+    </div>
+
+    <div class="card">
+      <div class="info-row"><span class="info-label">Profit at maturity</span><span class="info-val" style="color:var(--green);" id="spm-profit">—</span></div>
+      <div class="info-row"><span class="info-label">Total at maturity</span><span class="info-val" style="color:var(--lime);" id="spm-total">—</span></div>
+    </div>
+
+    <div class="card card-warning" style="font-size:12px;line-height:1.6;">
+      ⚠️ Funds are <strong>locked</strong> until maturity. Withdrawal only on Mondays (Kampala). Only one active SACCO at a time.
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:10px;margin-top:8px;">
+      <button class="btn btn-secondary" onclick="closeSaccoPurchase()">Cancel</button>
+      <button class="btn btn-primary" id="spm-confirm-btn">Confirm Investment</button>
+    </div>
+  </div>
 </div>
 
 <!-- Task Modal -->
@@ -1090,7 +1152,7 @@ body::before {
 //  CONFIGURATION — PASTE YOUR ANON KEY BELOW
 // ════════════════════════════════════════════════════════════
 const SUPABASE_URL      = 'https://lwzupqjsnhgimhclxsyg.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3enVwcWpzbmhnaW1oY2x4c3lnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4Njk2MjAsImV4cCI6MjA5MjQ0NTYyMH0.C5pFpOsJBF_lUzJejf_UAiKP7hOBKZ1s1I5BRHHEX6k';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRwZG1heHZ1ZXV0d2d1eXpjZG5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODg0OTgsImV4cCI6MjA5MjQ2NDQ5OH0.3RA_dXE1eOuZvDgUudpfD3qShZf2ckJXZzE_G7M9KuI';
 
 // ════════════════════════════════════════════════════════════
 //  CLIENT & STATE
@@ -1135,6 +1197,7 @@ function showSection(id) {
   if (id === 'tasks')     loadTasks();
   if (id === 'referrals') loadReferrals();
   if (id === 'wallet')    loadHistory();
+  if (id === 'sacco')     loadSacco();
   if (id === 'profile')   loadProfileView();
 
   window.scrollTo(0, 0);
@@ -1885,6 +1948,51 @@ function shareViaWhatsApp() {
 
 async function loadReferrals() {
   document.getElementById('ref-link-display').textContent = referralLink();
+
+  // Tier
+  const { data: tiers } = await sb.from('referral_tiers').select('*').order('sort_order');
+  const { data: activeCount } = await sb.rpc('my_active_referrals_count');
+  const count = activeCount || 0;
+  let currentTier = null;
+  let nextTier = null;
+  for (const t of (tiers || [])) {
+    if (count >= t.min_referrals) currentTier = t;
+    else if (!nextTier) nextTier = t;
+  }
+  document.getElementById('tier-emoji').textContent = currentTier?.emoji || '🌱';
+  document.getElementById('tier-name').textContent  = currentTier?.display_name || 'Starter';
+  if (nextTier) {
+    const need = nextTier.min_referrals - count;
+    document.getElementById('tier-progress').textContent = `${count} active referrals · ${need} more to reach ${nextTier.display_name}`;
+  } else {
+    document.getElementById('tier-progress').textContent = `${count} active referrals · Top tier!`;
+  }
+  document.getElementById('tier-monthly').innerHTML = currentTier
+    ? `Monthly salary: <strong style="color:var(--lime);">UGX ${currentTier.monthly_salary.toLocaleString()}</strong>`
+    : `Reach ${nextTier?.min_referrals || 10} active referrals to unlock monthly salary`;
+
+  // Leaderboard
+  const lbList = document.getElementById('leaderboard-list');
+  const { data: lb, error: lbError } = await sb.rpc('weekly_leaderboard');
+  if (lbError || !lb || lb.length === 0) {
+    lbList.className = 'empty';
+    lbList.innerHTML = '<div class="empty-text">Be the first this week!</div>';
+  } else {
+    lbList.className = '';
+    lbList.innerHTML = lb.map((row, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `<span style="font-family:'DM Mono',monospace;font-weight:600;color:var(--text-3);">${i+1}</span>`;
+      const isMe = row.user_id === currentUser.id;
+      return `<div class="history-item" style="${isMe ? 'border-color:var(--lime);background:linear-gradient(135deg,var(--lime-dim),var(--surface));' : ''}">
+        <div class="history-icon" style="font-size:18px;width:28px;text-align:center;">${medal}</div>
+        <div class="history-body">
+          <div class="history-title">${escapeHtml(row.full_name)}${isMe ? ' <span class="badge badge-info">You</span>' : ''}</div>
+        </div>
+        <div class="history-amount pos">${row.referrals}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // My referrals list
   const list = document.getElementById('referrals-list');
   const { data } = await sb.from('profiles').select('full_name, created_at, is_active').eq('referred_by', currentProfile.id).order('created_at', { ascending: false });
   if (!data || data.length === 0) {
@@ -1899,11 +2007,162 @@ async function loadReferrals() {
     return `<div class="history-item">
       <div class="history-icon">👤</div>
       <div class="history-body">
-        <div class="history-title">${r.full_name} ${status}</div>
+        <div class="history-title">${escapeHtml(r.full_name)} ${status}</div>
         <div class="history-date">${d}</div>
       </div>
     </div>`;
   }).join('');
+}
+
+// ════════════════════════════════════════════════════════════
+//  SACCO
+// ════════════════════════════════════════════════════════════
+let saccoTimers = [];
+
+async function loadSacco() {
+  saccoTimers.forEach(t => clearInterval(t));
+  saccoTimers = [];
+
+  document.getElementById('sacco-earnings-val').textContent = Number(currentProfile?.sacco_earnings || 0).toLocaleString();
+  hideAlert(document.getElementById('sacco-alert'));
+
+  // Active investments
+  const activeBox = document.getElementById('sacco-active-list');
+  const { data: investments } = await sb
+    .from('sacco_investments')
+    .select('*, sacco_plans(display_name)')
+    .eq('user_id', currentUser.id)
+    .order('created_at', { ascending: false });
+
+  const active = (investments || []).filter(i => i.status === 'active');
+  if (active.length === 0) {
+    activeBox.innerHTML = '';
+  } else {
+    activeBox.innerHTML = active.map(inv => {
+      const planName = inv.sacco_plans?.display_name || inv.plan_id;
+      const isMatured = new Date(inv.matures_at) <= new Date();
+      const isMonday = (new Date()).getUTCDay() + ((new Date()).getUTCHours() + 3 >= 24 ? 1 : 0); // approximate
+      const dayOk = isMondayKampala();
+
+      const statusBadge = isMatured
+        ? (dayOk ? '<span class="badge badge-success">Ready to withdraw</span>' : '<span class="badge badge-warning">Matured · Wait Monday</span>')
+        : '<span class="badge badge-info">Active</span>';
+
+      const btnHtml = isMatured && dayOk
+        ? `<button class="btn btn-primary btn-full btn-sm" onclick="withdrawSacco('${inv.id}')">Withdraw UGX ${(Number(inv.amount)+Number(inv.profit)).toLocaleString()}</button>`
+        : '';
+
+      return `<div class="card card-accent">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px;">
+          <div>
+            <div style="font-weight:700;">🏦 ${planName}</div>
+            <div style="font-size:11px;color:var(--text-3);margin-top:2px;">${statusBadge}</div>
+          </div>
+          <div id="sacco-countdown-${inv.id}" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--lime);"></div>
+        </div>
+        <div class="info-row"><span class="info-label">Principal</span><span class="info-val">UGX ${Number(inv.amount).toLocaleString()}</span></div>
+        <div class="info-row"><span class="info-label">Profit at maturity</span><span class="info-val" style="color:var(--green);">+UGX ${Number(inv.profit).toLocaleString()}</span></div>
+        <div class="info-row"><span class="info-label">Matures</span><span class="info-val">${new Date(inv.matures_at).toLocaleDateString()}</span></div>
+        ${btnHtml}
+      </div>`;
+    }).join('');
+
+    // Live countdowns
+    active.forEach(inv => {
+      const el = document.getElementById(`sacco-countdown-${inv.id}`);
+      if (!el) return;
+      const tick = () => {
+        const ms = new Date(inv.matures_at) - Date.now();
+        if (ms <= 0) { el.textContent = 'Matured'; return; }
+        const d = Math.floor(ms / 86400000);
+        const h = Math.floor((ms % 86400000) / 3600000);
+        const m = Math.floor((ms % 3600000) / 60000);
+        el.textContent = `${d}d ${h}h ${m}m`;
+      };
+      tick();
+      saccoTimers.push(setInterval(tick, 60000));
+    });
+  }
+
+  // Plans
+  const plansBox = document.getElementById('sacco-plans-list');
+  const { data: plans } = await sb.from('sacco_plans').select('*').eq('is_active', true).order('sort_order');
+  const wallet = Number(currentProfile?.balance || 0);
+  plansBox.innerHTML = (plans || []).map(p => {
+    const canAfford = wallet >= p.min_amount;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-weight:700;">🏦 ${p.display_name}</div>
+        <div style="font-family:'DM Mono',monospace;color:var(--green);font-weight:600;">${(p.return_rate*100).toFixed(0)}% in ${p.duration_days}d</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);margin-bottom:10px;">UGX ${p.min_amount.toLocaleString()} – ${p.max_amount.toLocaleString()}</div>
+      ${canAfford
+        ? `<button class="btn btn-primary btn-full btn-sm" onclick='openSaccoPurchase(${JSON.stringify(p)})'>Invest</button>`
+        : `<button class="btn btn-secondary btn-full btn-sm" onclick="showSection('wallet');setTimeout(()=>showWalletTab('deposit'),100);">Deposit to invest</button>`}
+    </div>`;
+  }).join('');
+}
+
+function isMondayKampala() {
+  const now = new Date();
+  const kamp = new Date(now.getTime() + 3 * 3600 * 1000);
+  return kamp.getUTCDay() === 1;
+}
+
+function openSaccoPurchase(plan) {
+  const wallet = Number(currentProfile?.balance || 0);
+  document.getElementById('spm-title').textContent = `🏦 ${plan.display_name}`;
+  document.getElementById('spm-info').textContent = `Lock for ${plan.duration_days} days · ${(plan.return_rate*100).toFixed(0)}% return`;
+  document.getElementById('spm-amount').value = plan.min_amount;
+  document.getElementById('spm-amount').min = plan.min_amount;
+  document.getElementById('spm-amount').max = Math.min(plan.max_amount, wallet);
+  document.getElementById('spm-range').textContent = `UGX ${plan.min_amount.toLocaleString()} – ${plan.max_amount.toLocaleString()}`;
+  document.getElementById('spm-wallet').textContent = `UGX ${wallet.toLocaleString()}`;
+  hideAlert(document.getElementById('spm-alert'));
+  const btn = document.getElementById('spm-confirm-btn');
+  btn.onclick = () => submitSaccoPurchase(plan.id);
+  setLoading(btn, false, 'Confirm Investment');
+  spmRecalculate(plan);
+  document.getElementById('spm-amount').oninput = () => spmRecalculate(plan);
+  document.getElementById('sacco-purchase-modal').classList.remove('hidden');
+}
+
+function spmRecalculate(plan) {
+  const amt = parseInt(document.getElementById('spm-amount').value || '0', 10);
+  const profit = Math.round(amt * plan.return_rate);
+  document.getElementById('spm-profit').textContent = `+UGX ${profit.toLocaleString()}`;
+  document.getElementById('spm-total').textContent  = `UGX ${(amt + profit).toLocaleString()}`;
+}
+
+function closeSaccoPurchase() {
+  document.getElementById('sacco-purchase-modal').classList.add('hidden');
+}
+
+async function submitSaccoPurchase(planId) {
+  const amt = parseInt(document.getElementById('spm-amount').value, 10);
+  const btn = document.getElementById('spm-confirm-btn');
+  const alertEl = document.getElementById('spm-alert');
+  hideAlert(alertEl);
+  if (!amt) { showAlert(alertEl, 'Enter amount'); return; }
+  setLoading(btn, true, 'Processing…');
+  const { data, error } = await sb.rpc('purchase_sacco', { p_plan_id: planId, p_amount: amt });
+  if (error || data?.error) {
+    setLoading(btn, false, 'Try again');
+    showAlert(alertEl, data?.error || error?.message || 'Failed');
+    return;
+  }
+  closeSaccoPurchase();
+  toast(`Invested! Profit: +UGX ${Number(data.profit).toLocaleString()}`, 'success');
+  await loadProfileAndRoute();
+  loadSacco();
+}
+
+async function withdrawSacco(invId) {
+  const { data, error } = await sb.rpc('withdraw_sacco', { p_investment_id: invId });
+  if (error || data?.error) { toast(data?.error || error?.message || 'Failed', 'error'); return; }
+  toast(`Credited UGX ${Number(data.credited).toLocaleString()} to SACCO earnings 🏦`, 'success');
+  await loadProfileAndRoute();
+  loadSacco();
 }
 
 // ════════════════════════════════════════════════════════════
