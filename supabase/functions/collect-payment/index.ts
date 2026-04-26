@@ -11,7 +11,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const PENDING_TTL_MS = 3 * 60 * 1000; // 3 minutes
+// How long before a pending transaction is considered stale and re-sent
+const PENDING_TTL_MS = 30 * 1000; // 30 seconds — matches the USSD prompt lifetime
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -50,10 +51,10 @@ serve(async (req) => {
       return json({ error: "Account already registered" }, 400);
     }
 
-    // Check for pending — but auto-expire if stale
+    // Check for pending — auto-expire if older than 30 seconds
     const { data: pendingTx } = await supabase
       .from("transactions")
-      .select("reference, created_at")
+      .select("id, reference, created_at")
       .eq("user_id", user.id)
       .eq("type", "registration")
       .eq("status", "pending")
@@ -64,12 +65,18 @@ serve(async (req) => {
     if (pendingTx) {
       const ageMs = Date.now() - new Date(pendingTx.created_at).getTime();
       if (ageMs < PENDING_TTL_MS) {
-        return json({ success: true, reference: pendingTx.reference, alreadyPending: true });
+        // Still fresh — return existing so frontend can subscribe to it
+        return json({
+          success: true,
+          reference: pendingTx.reference,
+          txn_id: pendingTx.id,       // ← needed for Realtime subscription
+          alreadyPending: true,
+        });
       }
-      // Stale — expire and continue
+      // Stale — expire and send a fresh prompt
       await supabase
         .from("transactions")
-        .update({ status: "failed", description: "Auto-expired pending" })
+        .update({ status: "failed", description: "Auto-expired: USSD prompt timed out" })
         .eq("reference", pendingTx.reference);
     }
 
@@ -133,6 +140,7 @@ serve(async (req) => {
     });
 
     const lpData = await lpRes.json();
+    console.log("LivePay response:", JSON.stringify(lpData));
 
     if (!lpRes.ok || lpData.success === false) {
       console.error("LivePay error:", lpData);
@@ -143,22 +151,31 @@ serve(async (req) => {
     }
 
     // Record pending transaction
-    const { error: txError } = await supabase.from("transactions").insert({
-      user_id: user.id,
-      type: "registration",
-      amount: 20000,
-      status: "pending",
-      reference: ref,
-      livepay_transaction_id: lpData.internal_reference ?? null,
-      description: "MW Registration Fee",
-    });
+    const { data: newTx, error: txError } = await supabase
+      .from("transactions")
+      .insert({
+        user_id: user.id,
+        type: "registration",
+        amount: 20000,
+        status: "pending",
+        reference: ref,
+        livepay_transaction_id: lpData.internal_reference ?? null,
+        description: "MW Registration Fee",
+      })
+      .select("id")
+      .single();
 
     if (txError) {
       console.error("Transaction insert error:", txError);
       return json({ error: "Failed to record transaction" }, 500);
     }
 
-    return json({ success: true, reference: ref });
+    return json({
+      success: true,
+      reference: ref,
+      txn_id: newTx.id,   // ← frontend uses this to subscribe via Supabase Realtime
+    });
+
   } catch (err) {
     console.error("Unexpected error:", err);
     return json({ error: "Internal server error" }, 500);
