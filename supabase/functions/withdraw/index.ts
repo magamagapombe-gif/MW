@@ -1,12 +1,12 @@
 // supabase/functions/withdraw/index.ts
-// Withdraw from a specific earnings category. Applies 5% admin fee.
-// Task earnings only withdrawable Fri/Sat. Minimum 5,000 UGX.
+// Withdraw with category, 5% fee, Fri/Sat task rule
+// Gates on has_purchased_plan now (vault is the activation)
 // Deploy: supabase functions deploy withdraw --no-verify-jwt
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
+const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -15,159 +15,92 @@ const corsHeaders = {
 const MIN_WITHDRAWAL = 5000;
 const ADMIN_FEE_PCT  = 0.05;
 
-const VALID_CATEGORIES = new Set([
-  "balance",
-  "task_earnings",
-  "referral_earnings",
-  "sacco_earnings",
-]);
+const VALID_CATEGORIES = new Set(["balance", "task_earnings", "referral_earnings", "sacco_earnings"]);
 
 function isTaskWithdrawDay(): boolean {
-  const nowEAT = new Date(Date.now() + 3 * 60 * 60 * 1000);
-  const day = nowEAT.getUTCDay();
+  const kamp = new Date(Date.now() + 3 * 60 * 60 * 1000);
+  const day = kamp.getUTCDay();
   return day === 5 || day === 6;
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "Unauthorized" }, 401);
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
+    const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const auth = req.headers.get("Authorization");
+    if (!auth) return j({ error: "Unauthorized" }, 401);
+    const { data: { user } } = await sb.auth.getUser(auth.replace("Bearer ", ""));
+    if (!user) return j({ error: "Unauthorized" }, 401);
 
     const { amount, category } = await req.json();
-
-    if (!category || !VALID_CATEGORIES.has(category)) {
-      return json({ error: "Invalid category" }, 400);
-    }
-    if (!amount || typeof amount !== "number" || !Number.isInteger(amount)) {
-      return json({ error: "Amount must be a whole number" }, 400);
-    }
-    if (amount < MIN_WITHDRAWAL) {
-      return json({ error: `Minimum withdrawal is UGX ${MIN_WITHDRAWAL.toLocaleString()}` }, 400);
-    }
-
+    if (!category || !VALID_CATEGORIES.has(category)) return j({ error: "Invalid category" }, 400);
+    if (!amount || !Number.isInteger(amount)) return j({ error: "Amount must be a whole number" }, 400);
+    if (amount < MIN_WITHDRAWAL) return j({ error: `Minimum withdrawal is UGX ${MIN_WITHDRAWAL.toLocaleString()}` }, 400);
     if (category === "task_earnings" && !isTaskWithdrawDay()) {
-      return json({ error: "Task earnings can only be withdrawn on Friday or Saturday." }, 400);
+      return j({ error: "Task earnings can only be withdrawn on Friday or Saturday." }, 400);
     }
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    const { data: profile } = await sb.from("profiles").select("*").eq("id", user.id).single();
+    if (!profile) return j({ error: "Profile not found" }, 404);
+    if (!profile.has_purchased_plan) return j({ error: "Buy a vault plan first to unlock withdrawals." }, 403);
 
-    if (!profile) return json({ error: "Profile not found" }, 404);
-    if (!profile.is_active) return json({ error: "Account not yet activated" }, 403);
+    const catBalance = Number(profile[category] || 0);
+    if (catBalance < amount) return j({ error: `Insufficient ${category.replace("_", " ")}. Available: UGX ${catBalance.toLocaleString()}` }, 400);
 
-    const categoryBalance = profile[category] as number;
-    if (categoryBalance < amount) {
-      return json({ error: `Insufficient ${category.replace("_", " ")}. Available: UGX ${categoryBalance.toLocaleString()}` }, 400);
-    }
-
-    const { data: pendingWd } = await supabase
-      .from("transactions")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("type", "withdrawal")
-      .eq("status", "pending")
-      .maybeSingle();
-
-    if (pendingWd) {
-      return json({ error: "You have a pending withdrawal. Please wait for it to complete." }, 400);
-    }
+    const { data: pending } = await sb.from("transactions").select("id").eq("user_id", user.id).eq("type", "withdrawal").eq("status", "pending").maybeSingle();
+    if (pending) return j({ error: "Pending withdrawal exists. Wait for it to complete." }, 400);
 
     const fee = Math.round(amount * ADMIN_FEE_PCT);
-    const netAmount = amount - fee;
+    const net = amount - fee;
+    const ref = `MWWD${user.id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
 
-    const reference = `MWWD${user.id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
+    const upd: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    upd[category] = catBalance - amount;
 
-    const colUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    colUpdate[category] = categoryBalance - amount;
+    const { error: dErr } = await sb.from("profiles").update(upd).eq("id", user.id);
+    if (dErr) { console.error(dErr); return j({ error: "Failed to process withdrawal" }, 500); }
 
-    const { error: deductError } = await supabase
-      .from("profiles")
-      .update(colUpdate)
-      .eq("id", user.id);
-
-    if (deductError) {
-      console.error("Balance deduction error:", deductError);
-      return json({ error: "Failed to process withdrawal" }, 500);
-    }
-
-    await supabase.from("transactions").insert({
-      user_id: user.id,
-      type: "withdrawal",
-      amount,
-      fee,
-      category,
-      status: "pending",
-      reference,
+    await sb.from("transactions").insert({
+      user_id: user.id, type: "withdrawal", amount, fee, category,
+      status: "pending", reference: ref,
       description: `Withdrawal from ${category.replace("_", " ")} to ${profile.phone_number}`,
     });
 
-    const lpRes = await fetch("https://livepay.me/api/send-money", {
+    const lp = await fetch("https://livepay.me/api/send-money", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${Deno.env.get("LIVEPAY_API_KEY")}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("LIVEPAY_API_KEY")}` },
       body: JSON.stringify({
         accountNumber: Deno.env.get("LIVEPAY_ACCOUNT_NUMBER"),
         phoneNumber: profile.phone_number,
-        amount: netAmount,
-        currency: "UGX",
-        reference,
-        description: "MW Withdrawal",
+        amount: net, currency: "UGX", reference: ref, description: "MW Withdrawal",
       }),
     });
+    const lpData = await lp.json();
 
-    const lpData = await lpRes.json();
-
-    if (!lpRes.ok || !lpData.success) {
-      const refundUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      refundUpdate[category] = categoryBalance;
-      await supabase.from("profiles").update(refundUpdate).eq("id", user.id);
-      await supabase.from("transactions").update({ status: "failed" }).eq("reference", reference);
-
+    if (!lp.ok || !lpData.success) {
+      const refund: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      refund[category] = catBalance;
+      await sb.from("profiles").update(refund).eq("id", user.id);
+      await sb.from("transactions").update({ status: "failed" }).eq("reference", ref);
       console.error("LivePay send-money error:", lpData);
-      return json({ error: lpData.error || "Withdrawal failed. Please try again." }, 400);
+      return j({ error: lpData.error || "Withdrawal failed" }, 400);
     }
 
     if (lpData.internal_reference) {
-      await supabase
-        .from("transactions")
-        .update({ livepay_transaction_id: lpData.internal_reference })
-        .eq("reference", reference);
+      await sb.from("transactions").update({ livepay_transaction_id: lpData.internal_reference }).eq("reference", ref);
     }
 
-    return json({
-      success: true,
-      reference,
-      message: `UGX ${netAmount.toLocaleString()} (after ${ADMIN_FEE_PCT * 100}% fee) is being sent to ${profile.phone_number}.`,
-      grossAmount: amount,
-      fee,
-      netAmount,
+    return j({
+      success: true, reference: ref,
+      message: `UGX ${net.toLocaleString()} (after 5% fee) sent to ${profile.phone_number}.`,
+      grossAmount: amount, fee, netAmount: net,
     });
-  } catch (err) {
-    console.error("Unexpected error:", err);
-    return json({ error: "Internal server error" }, 500);
+  } catch (e) {
+    console.error(e);
+    return j({ error: "Internal server error" }, 500);
   }
 });
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function j(d: unknown, s = 200) {
+  return new Response(JSON.stringify(d), { status: s, headers: { ...cors, "Content-Type": "application/json" } });
 }
