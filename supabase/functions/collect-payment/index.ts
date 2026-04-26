@@ -1,6 +1,6 @@
 // supabase/functions/collect-payment/index.ts
 // Initiates a 20,000 UGX registration payment via LivePay
-// Deploy: supabase functions deploy collect-payment
+// Deploy: supabase functions deploy collect-payment --no-verify-jwt
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -10,6 +10,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const PENDING_TTL_MS = 3 * 60 * 1000; // 3 minutes
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -22,22 +24,15 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Authenticate the user
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      return json({ error: "Unauthorized" }, 401);
-    }
+    if (!authHeader) return json({ error: "Unauthorized" }, 401);
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return json({ error: "Unauthorized" }, 401);
-    }
+    if (authError || !user) return json({ error: "Unauthorized" }, 401);
 
     const { fullName, phoneNumber, network, referralCode } = await req.json();
 
-    // Validate inputs
     if (!fullName || !phoneNumber || !network) {
       return json({ error: "Missing required fields" }, 400);
     }
@@ -45,10 +40,9 @@ serve(async (req) => {
       return json({ error: "Network must be MTN or AIRTEL" }, 400);
     }
 
-    // Check if user already has an active account
     const { data: existingProfile } = await supabase
       .from("profiles")
-      .select("is_active, referral_code")
+      .select("is_active")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -56,17 +50,27 @@ serve(async (req) => {
       return json({ error: "Account already registered" }, 400);
     }
 
-    // Check for an already-pending registration payment
+    // Check for pending — but auto-expire if stale
     const { data: pendingTx } = await supabase
       .from("transactions")
-      .select("reference")
+      .select("reference, created_at")
       .eq("user_id", user.id)
       .eq("type", "registration")
       .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (pendingTx) {
-      return json({ success: true, reference: pendingTx.reference, alreadyPending: true });
+      const ageMs = Date.now() - new Date(pendingTx.created_at).getTime();
+      if (ageMs < PENDING_TTL_MS) {
+        return json({ success: true, reference: pendingTx.reference, alreadyPending: true });
+      }
+      // Stale — expire and continue
+      await supabase
+        .from("transactions")
+        .update({ status: "failed", description: "Auto-expired pending" })
+        .eq("reference", pendingTx.reference);
     }
 
     // Resolve referrer
@@ -81,18 +85,18 @@ serve(async (req) => {
       if (referrer) referrerId = referrer.id;
     }
 
-    // Normalise phone number to 256XXXXXXXXX format
-    let phone = phoneNumber.replace(/\D/g, "");
-    if (phone.startsWith("0")) {
-      phone = "256" + phone.slice(1);
-    } else if (!phone.startsWith("256")) {
-      phone = "256" + phone;
+    // Normalize phone
+    let phone = String(phoneNumber).replace(/\D/g, "");
+    if (phone.startsWith("0")) phone = "256" + phone.slice(1);
+    else if (!phone.startsWith("256")) phone = "256" + phone;
+
+    if (phone.length !== 12) {
+      return json({ error: "Invalid phone number" }, 400);
     }
 
-    // Generate a unique reference (max 30 chars, no spaces)
     const ref = `MWREG${user.id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
 
-    // Upsert profile (trigger auto-generates referral_code on first insert)
+    // Upsert profile
     const { error: profileError } = await supabase.from("profiles").upsert(
       {
         id: user.id,
@@ -111,9 +115,7 @@ serve(async (req) => {
       return json({ error: "Failed to create profile" }, 500);
     }
 
-    // ── LivePay Collect Money API ─────────────────────────────────────
-    // Endpoint confirmed working: https://livepay.me/api/collect-money
-    // Auth: single Bearer token (no separate public key)
+    // Call LivePay
     const lpRes = await fetch("https://livepay.me/api/collect-money", {
       method: "POST",
       headers: {
@@ -140,7 +142,7 @@ serve(async (req) => {
       );
     }
 
-    // Store pending transaction — use LivePay's internal_reference as tx id
+    // Record pending transaction
     const { error: txError } = await supabase.from("transactions").insert({
       user_id: user.id,
       type: "registration",
