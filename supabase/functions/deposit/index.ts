@@ -1,7 +1,5 @@
 // supabase/functions/deposit/index.ts
-// Deposit to wallet — gated on has_purchased_plan only for FUNDING vault upgrades.
-// Actually no — users need to deposit BEFORE buying first plan. So no gate.
-// But check phone is set.
+// Deposit to wallet — user enters their own amount (min 1,000, max 5,000,000 UGX)
 // Deploy: supabase functions deploy deposit --no-verify-jwt
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -34,6 +32,7 @@ serve(async (req) => {
     const { data: profile } = await sb.from("profiles").select("phone_number, network").eq("id", user.id).single();
     if (!profile) return j({ error: "Profile not found. Complete signup first." }, 404);
     if (!profile.phone_number) return j({ error: "Phone number not set." }, 400);
+    if (!profile.network) return j({ error: "Network not set on profile." }, 400);
 
     // Pending check w/ auto-expire
     const { data: pending } = await sb.from("transactions").select("reference, created_at")
@@ -55,13 +54,18 @@ serve(async (req) => {
       reference: ref, category: "balance", description: "Wallet deposit",
     });
 
+    // FIX: pass network so MTN prompts are routed correctly
     const lp = await fetch("https://livepay.me/api/collect-money", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("LIVEPAY_API_KEY")}` },
       body: JSON.stringify({
         accountNumber: Deno.env.get("LIVEPAY_ACCOUNT_NUMBER"),
         phoneNumber: profile.phone_number,
-        amount, currency: "UGX", reference: ref, description: "MW Deposit",
+        amount,
+        currency: "UGX",
+        reference: ref,
+        description: "MW Deposit",
+        network: profile.network, // FIX: pass network so MTN prompts are routed correctly
       }),
     });
     const lpData = await lp.json();

@@ -69,7 +69,7 @@ serve(async (req) => {
         return json({
           success: true,
           reference: pendingTx.reference,
-          txn_id: pendingTx.id,       // ← needed for Realtime subscription
+          txn_id: pendingTx.id,
           alreadyPending: true,
         });
       }
@@ -122,7 +122,7 @@ serve(async (req) => {
       return json({ error: "Failed to create profile" }, 500);
     }
 
-    // Call LivePay
+    // Call LivePay — network field added so MTN prompts reach the phone
     const lpRes = await fetch("https://livepay.me/api/collect-money", {
       method: "POST",
       headers: {
@@ -136,6 +136,7 @@ serve(async (req) => {
         currency: "UGX",
         reference: ref,
         description: "MW Registration",
+        network: network, // FIX: pass network so MTN prompts are routed correctly
       }),
     });
 
@@ -173,7 +174,7 @@ serve(async (req) => {
     return json({
       success: true,
       reference: ref,
-      txn_id: newTx.id,   // ← frontend uses this to subscribe via Supabase Realtime
+      txn_id: newTx.id,
     });
 
   } catch (err) {

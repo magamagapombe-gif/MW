@@ -66,13 +66,18 @@ serve(async (req) => {
       description: `Withdrawal from ${category.replace("_", " ")} to ${profile.phone_number}`,
     });
 
+    // FIX: pass network so MTN withdrawals are routed correctly
     const lp = await fetch("https://livepay.me/api/send-money", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("LIVEPAY_API_KEY")}` },
       body: JSON.stringify({
         accountNumber: Deno.env.get("LIVEPAY_ACCOUNT_NUMBER"),
         phoneNumber: profile.phone_number,
-        amount: net, currency: "UGX", reference: ref, description: "MW Withdrawal",
+        amount: net,
+        currency: "UGX",
+        reference: ref,
+        description: "MW Withdrawal",
+        network: profile.network, // FIX: pass network so MTN withdrawals are routed correctly
       }),
     });
     const lpData = await lp.json();
