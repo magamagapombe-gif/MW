@@ -1267,10 +1267,14 @@ async function doActivate(btn, alert) {
     const result = await res.json();
     setLoading(btn, false, 'Activate Account →');
     if (!result.success) { showAlert(alert, result.error || 'Activation failed'); return; }
-    // Optimistically mark active so routing doesn't loop back to register
-    if (currentProfile) currentProfile.is_active = true;
     toast('Account activated! Welcome 🎉', 'success');
-    await loadProfileAndRoute();
+    // Fetch the freshly-created profile. Force is_active=true regardless of
+    // DB replication lag — the server just confirmed success so we trust it.
+    const { data: freshProfile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+    currentProfile = freshProfile || { id: currentUser.id, full_name: regData.fullName, phone_number: regData.phone, network: regData.network, is_active: true };
+    currentProfile.is_active = true;
+    await loadDashboard();
+    showPage('dashboard');
   } catch {
     setLoading(btn, false, 'Activate Account →');
     showAlert(alert, 'Network error. Please try again.');
@@ -1405,6 +1409,21 @@ async function loadDashboard() {
   // Referral count
   const { count: refCount } = await sb.from('profiles').select('id', { count: 'exact', head: true }).eq('referred_by', currentProfile.id);
   document.getElementById('stat-referrals').textContent = refCount || 0;
+}
+
+// ════════════════════════════════════════════════════════════
+//  REFRESH DASHBOARD (re-fetch profile + update UI without page reset)
+// ════════════════════════════════════════════════════════════
+async function refreshDashboard() {
+  if (!currentUser) return;
+  const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+  if (!profile) return;
+  currentProfile = profile;
+  await loadDashboard();
+  // If wallet section is active, reload history too so new tx appears
+  if (document.getElementById('section-wallet')?.classList.contains('active')) {
+    loadHistory();
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1760,7 +1779,7 @@ function pollDepositStatus(reference) {
     if (tx?.status === 'completed') {
       clearInterval(timer);
       toast('Deposit credited! 💰', 'success');
-      await loadProfileAndRoute();
+      await refreshDashboard();
     } else if (tx?.status === 'failed') {
       clearInterval(timer);
       toast('Deposit failed', 'error');
@@ -1798,7 +1817,7 @@ async function submitWithdrawal() {
     if (!result.success) { showAlert(alert, result.error || 'Withdrawal failed'); return; }
     toast(result.message, 'success');
     document.getElementById('withdraw-amount').value = '';
-    await loadProfileAndRoute();
+    await refreshDashboard();
   } catch {
     setLoading(btn, false, 'Request Withdrawal');
     showAlert(alert, 'Network error');
