@@ -400,8 +400,8 @@ body::before {
   padding-bottom: env(safe-area-inset-bottom);
 }
 .nav-item {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 10px 2px 8px; font-size: 9px; font-weight: 600; letter-spacing: 0.03em;
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 4px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--text-3); transition: color 0.18s;
 }
 .nav-item.active { color: var(--lime); }
@@ -550,7 +550,7 @@ body::before {
   <div class="landing-hero">
     <div class="landing-kicker">🇺🇬 Uganda's Referral Platform</div>
     <h1 class="landing-title">Earn <span class="hl">UGX 4,000</span> for every friend you refer</h1>
-    <p class="landing-sub">Register for free. Share your link. Get paid instantly to your mobile money wallet every time someone joins.</p>
+    <p class="landing-sub">Register once for UGX 20,000. Share your link. Get paid instantly to your mobile money wallet every time someone joins.</p>
   </div>
   <div class="landing-cta">
     <button class="btn btn-primary btn-lg" onclick="showPage('auth','register')">Get Started Free →</button>
@@ -591,7 +591,7 @@ body::before {
     <p class="landing-section-sub">Simple three-step process to start earning</p>
     <div class="step">
       <div class="step-num">01</div>
-      <div><div class="step-title">Register with Mobile Money</div><div class="step-desc">Sign up free with your MTN MoMo or Airtel Money number.</div></div>
+      <div><div class="step-title">Register with Mobile Money</div><div class="step-desc">Pay UGX 20,000 one-time activation via MTN MoMo or Airtel Money.</div></div>
     </div>
     <div class="step">
       <div class="step-num">02</div>
@@ -703,8 +703,28 @@ body::before {
         <p style="font-size:11px;color:var(--text-3);margin-top:6px;">If someone invited you, enter their code.</p>
         <p id="ref-validation" style="font-size:12px;margin-top:6px;"></p>
       </div>
-      <button class="btn btn-primary btn-full btn-lg" id="activate-btn" onclick="activateAccount()">Activate Account →</button>
-      <button class="btn btn-secondary btn-full" style="margin-top:10px;" onclick="skipAndActivate()">Skip — I don't have a code</button>
+      <button class="btn btn-primary btn-full btn-lg" onclick="goToStep3()">Continue →</button>
+      <button class="btn btn-secondary btn-full" style="margin-top:10px;" onclick="skipReferral()">Skip — I don't have a code</button>
+    </div>
+
+    <!-- Step 3: Confirm & Pay -->
+    <div id="reg-step-3" class="hidden">
+      <div id="reg-step3-alert" class="alert alert-error hidden"></div>
+      <div class="card card-accent" style="margin-bottom:18px;">
+        <div style="text-align:center;margin-bottom:14px;">
+          <div class="balance-value" style="color:var(--lime);">UGX 20,000</div>
+          <div class="balance-currency">One-time Activation Fee</div>
+        </div>
+        <p style="font-size:13px;color:var(--text-2);text-align:center;line-height:1.5;">
+          💡 A mobile money prompt will be sent to <strong id="pay-phone-display" style="color:var(--text);"></strong>. Confirm it on your phone to activate your account.
+        </p>
+      </div>
+      <div class="card" style="margin-bottom:14px;">
+        <div class="info-row"><span class="info-label">Activation fee</span><span class="info-val">UGX 20,000</span></div>
+        <div class="info-row"><span class="info-label">Network</span><span class="info-val" id="pay-network-display">—</span></div>
+        <div class="info-row"><span class="info-label">Referral code</span><span class="info-val" id="pay-referral-display">—</span></div>
+      </div>
+      <button class="btn btn-primary btn-full btn-lg" id="pay-btn" onclick="initiatePayment()">Pay UGX 20,000 via Mobile Money</button>
     </div>
   </div>
 </div>
@@ -811,11 +831,19 @@ body::before {
         </div>
       </div>
 
-      <!-- Quick actions -->
-      <div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--text-2);margin:20px 0 10px;letter-spacing:0.04em;text-transform:uppercase;">Quick Actions</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
-        <button class="btn btn-ghost btn-sm" onclick="showSection('referrals')">🔗 My Referral Link</button>
-        <button class="btn btn-ghost btn-sm" onclick="showSection('tasks')">✅ View Tasks</button>
+      <!-- Referral card -->
+      <div class="card card-accent" style="margin-top:6px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div>
+            <div style="font-weight:700;font-size:15px;">🔗 Your Referral</div>
+            <div style="font-size:12px;color:var(--text-2);margin-top:2px;">UGX 4,000 per referral</div>
+          </div>
+        </div>
+        <div id="home-ref-code" style="font-family:'DM Mono',monospace;font-size:24px;font-weight:600;color:var(--lime);letter-spacing:0.08em;margin-bottom:12px;">——</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="copyReferralLink()">📋 Copy Link</button>
+          <button class="btn btn-ghost btn-sm" onclick="shareViaWhatsApp()">📱 WhatsApp</button>
+        </div>
       </div>
     </div>
 
@@ -863,14 +891,12 @@ body::before {
         <div class="balance-value" id="ref-total-earnings" style="font-size:32px;">0</div>
         <div class="balance-currency">UGX</div>
       </div>
-      <div class="card card-accent">
-        <div style="font-weight:700;font-size:15px;margin-bottom:6px;">🔑 Your Referral Code</div>
-        <div id="home-ref-code" style="font-family:'DM Mono',monospace;font-size:28px;font-weight:700;color:var(--lime);letter-spacing:0.1em;margin-bottom:14px;">——</div>
-        <div style="font-weight:700;margin-bottom:8px;font-size:13px;color:var(--text-2);">🔗 Referral Link</div>
+      <div class="card">
+        <div style="font-weight:700;margin-bottom:10px;">🔗 Your Referral Link</div>
         <div class="ref-link-box" id="ref-link-display">Loading…</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <button class="btn btn-primary btn-sm" onclick="copyReferralLink()">📋 Copy Link</button>
-          <button class="btn btn-secondary btn-sm" onclick="shareViaWhatsApp()">📱 WhatsApp</button>
+          <button class="btn btn-primary btn-sm" onclick="copyReferralLink()">Copy Link</button>
+          <button class="btn btn-secondary btn-sm" onclick="shareViaWhatsApp()">Share</button>
         </div>
       </div>
       <div class="card">
@@ -996,7 +1022,6 @@ body::before {
     <button class="nav-item active" data-section="home"      onclick="showSection('home')"><span class="nav-item-icon">🏠</span>Home</button>
     <button class="nav-item"        data-section="vault"     onclick="showSection('vault')"><span class="nav-item-icon">💎</span>Vault</button>
     <button class="nav-item"        data-section="tasks"     onclick="showSection('tasks')"><span class="nav-item-icon">✅</span>Tasks</button>
-    <button class="nav-item"        data-section="referrals" onclick="showSection('referrals')"><span class="nav-item-icon">🔗</span>Refer</button>
     <button class="nav-item"        data-section="wallet"    onclick="showSection('wallet')"><span class="nav-item-icon">💰</span>Wallet</button>
     <button class="nav-item"        data-section="profile"   onclick="showSection('profile')"><span class="nav-item-icon">👤</span>Profile</button>
   </nav>
@@ -1214,12 +1239,8 @@ function goToStep2() {
   document.getElementById('reg-step-sub').textContent = 'Optional — enter if someone invited you';
 }
 
-async function activateAccount() {
+async function goToStep3() {
   const code = document.getElementById('reg-ref-code').value.trim().toUpperCase();
-  const alert = document.getElementById('reg-step2-alert');
-  const btn   = document.getElementById('activate-btn');
-  hideAlert(alert);
-
   if (code) {
     const { data } = await sb.rpc('check_referral_code', { p_code: code });
     if (!data) {
@@ -1230,23 +1251,36 @@ async function activateAccount() {
   } else {
     regData.referralCode = '';
   }
-  await doActivate(btn, alert);
+  goToStep3_render();
 }
 
-async function skipAndActivate() {
+function skipReferral() {
   regData.referralCode = '';
-  const btn   = document.getElementById('activate-btn');
-  const alert = document.getElementById('reg-step2-alert');
-  await doActivate(btn, alert);
+  goToStep3_render();
 }
 
-async function doActivate(btn, alert) {
+function goToStep3_render() {
+  document.getElementById('reg-step-2').classList.add('hidden');
+  document.getElementById('reg-step-3').classList.remove('hidden');
+  document.getElementById('reg-progress-fill').style.width = '100%';
+  document.getElementById('reg-step-title').textContent = 'Confirm & Pay';
+  document.getElementById('reg-step-sub').textContent = 'Review your details and pay the activation fee';
+
+  document.getElementById('pay-phone-display').textContent = regData.phone;
+  document.getElementById('pay-network-display').textContent = regData.network;
+  document.getElementById('pay-referral-display').textContent = regData.referralCode || '—';
+}
+
+async function initiatePayment() {
+  const btn = document.getElementById('pay-btn');
+  const alert = document.getElementById('reg-step3-alert');
+  hideAlert(alert);
   if (!currentUser) { showPage('auth'); return; }
   if (!regData.fullName || !regData.phone || !regData.network) {
-    showAlert(alert, 'Missing info. Please restart registration.');
+    showAlert(alert, 'Missing info. Please complete the steps again.');
     return;
   }
-  setLoading(btn, true, 'Activating…');
+  setLoading(btn, true, 'Initiating payment…');
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { showPage('auth'); return; }
   try {
@@ -1265,18 +1299,13 @@ async function doActivate(btn, alert) {
       }),
     });
     const result = await res.json();
-    setLoading(btn, false, 'Activate Account →');
-    if (!result.success) { showAlert(alert, result.error || 'Activation failed'); return; }
-    toast('Account activated! Welcome 🎉', 'success');
-    // Fetch the freshly-created profile. Force is_active=true regardless of
-    // DB replication lag — the server just confirmed success so we trust it.
-    const { data: freshProfile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
-    currentProfile = freshProfile || { id: currentUser.id, full_name: regData.fullName, phone_number: regData.phone, network: regData.network, is_active: true };
-    currentProfile.is_active = true;
-    await loadDashboard();
-    showPage('dashboard');
-  } catch {
-    setLoading(btn, false, 'Activate Account →');
+    setLoading(btn, false, 'Pay UGX 20,000 via Mobile Money');
+    if (!result.success) { showAlert(alert, result.error || 'Payment initiation failed'); return; }
+    document.getElementById('pending-phone-display').textContent = regData.phone;
+    showPage('pending');
+    startPolling(result.reference);
+  } catch (err) {
+    setLoading(btn, false, 'Pay UGX 20,000 via Mobile Money');
     showAlert(alert, 'Network error. Please try again.');
   }
 }
@@ -1308,8 +1337,9 @@ function startPolling(reference) {
 function cancelPendingPayment() {
   clearInterval(pollTimer);
   showPage('register');
-  document.getElementById('reg-step-2').classList.remove('hidden');
+  document.getElementById('reg-step-3').classList.remove('hidden');
   document.getElementById('reg-step-1').classList.add('hidden');
+  document.getElementById('reg-step-2').classList.add('hidden');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1320,49 +1350,21 @@ async function loadProfileAndRoute() {
   const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
   currentProfile = profile;
   regData.email = currentUser.email || '';
-
+  if (profile) {
+    regData.fullName = profile.full_name || '';
+    regData.phone = profile.phone_number || '';
+    regData.network = profile.network || '';
+  }
   if (!profile) {
-    // No profile yet — need name from user
     if (!regData.fullName) {
       const name = prompt('Please enter your full name:');
       if (!name?.trim()) { await handleLogout(); return; }
       regData.fullName = name.trim();
     }
     showPage('register');
-    // Reset to step 1
-    document.getElementById('reg-step-1').classList.remove('hidden');
-    document.getElementById('reg-step-2').classList.add('hidden');
-    document.getElementById('reg-progress-fill').style.width = '33%';
-    document.getElementById('reg-step-title').textContent = 'Phone Number';
-    document.getElementById('reg-step-sub').textContent = 'Enter your mobile money number';
     return;
   }
-
-  // Always sync regData from the profile so doActivate never hits "Missing info"
-  regData.fullName = profile.full_name || regData.fullName || '';
-  regData.phone    = profile.phone_number || '';
-  regData.network  = profile.network || '';
-
-  if (!profile.is_active) {
-    // Profile exists but not yet activated — go to step 2 (referral/activate)
-    showPage('register');
-    if (regData.phone && regData.network) {
-      // Phone already saved — skip to step 2
-      document.getElementById('reg-step-1').classList.add('hidden');
-      document.getElementById('reg-step-2').classList.remove('hidden');
-      document.getElementById('reg-progress-fill').style.width = '66%';
-      document.getElementById('reg-step-title').textContent = 'Referral Code';
-      document.getElementById('reg-step-sub').textContent = 'Optional — enter if someone invited you';
-    } else {
-      document.getElementById('reg-step-1').classList.remove('hidden');
-      document.getElementById('reg-step-2').classList.add('hidden');
-      document.getElementById('reg-progress-fill').style.width = '33%';
-      document.getElementById('reg-step-title').textContent = 'Phone Number';
-      document.getElementById('reg-step-sub').textContent = 'Enter your mobile money number';
-    }
-    return;
-  }
-
+  if (!profile.is_active) { showPage('register'); return; }
   await loadDashboard();
   showPage('dashboard');
 }
@@ -1393,13 +1395,13 @@ async function loadDashboard() {
   // Active badge
   document.getElementById('active-badge').classList.toggle('hidden', !currentProfile.is_active);
 
-  // Show upgrade banner if user has no vault plan
-  const showBanner = currentProfile.is_active && !currentProfile.vault_plan_id;
+  // Show activate banner if on Early Bird still
+  const showBanner = currentProfile.is_active && (currentProfile.vault_plan_id === 'early_bird' || !currentProfile.vault_plan_id);
   document.getElementById('activate-banner').classList.toggle('hidden', !showBanner);
 
   // Plan name
   const plan = vaultPlansCache?.find(p => p.id === currentProfile.vault_plan_id);
-  const planName = plan ? `${plan.emoji || ''} ${plan.display_name}` : 'No Plan';
+  const planName = plan ? `${plan.emoji || ''} ${plan.display_name}` : 'Early Bird';
   document.getElementById('stat-plan').textContent = planName;
 
   // Referral code
@@ -1409,21 +1411,9 @@ async function loadDashboard() {
   // Referral count
   const { count: refCount } = await sb.from('profiles').select('id', { count: 'exact', head: true }).eq('referred_by', currentProfile.id);
   document.getElementById('stat-referrals').textContent = refCount || 0;
-}
 
-// ════════════════════════════════════════════════════════════
-//  REFRESH DASHBOARD (re-fetch profile + update UI without page reset)
-// ════════════════════════════════════════════════════════════
-async function refreshDashboard() {
-  if (!currentUser) return;
-  const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
-  if (!profile) return;
-  currentProfile = profile;
-  await loadDashboard();
-  // If wallet section is active, reload history too so new tx appears
-  if (document.getElementById('section-wallet')?.classList.contains('active')) {
-    loadHistory();
-  }
+  // Referral earnings total (separate from current balance)
+  document.getElementById('ref-total-earnings').textContent = r.toLocaleString();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1444,12 +1434,15 @@ async function loadVaultPlans() {
 
   vaultPlansCache.forEach(plan => {
     const isOwned  = currentProfile?.vault_plan_id === plan.id;
+    const isEarly  = plan.id === 'early_bird';
     const isLower  = plan.sort_order <= currentOrder && !isOwned;
     const canAfford = wallet >= plan.price;
 
     let buttonHtml = '';
     if (isOwned) {
       buttonHtml = ''; // current plan — no button
+    } else if (isEarly) {
+      buttonHtml = ''; // early bird isn't purchaseable
     } else if (isLower) {
       buttonHtml = '<div style="margin-top:12px;font-size:12px;color:var(--text-3);text-align:center;">Already surpassed</div>';
     } else if (!canAfford) {
@@ -1468,7 +1461,7 @@ async function loadVaultPlans() {
     card.innerHTML = `
       <div class="vault-head">
         <div class="vault-name">${plan.emoji || ''} ${plan.display_name}${isOwned ? ' <span class="badge badge-success">Current</span>' : ''}</div>
-        <div class="vault-price">UGX ${plan.price.toLocaleString()}</div>
+        <div class="vault-price">${isEarly ? 'FREE' : 'UGX ' + plan.price.toLocaleString()}</div>
       </div>
       <div class="vault-stats">
         <div class="vault-stat"><div class="vault-stat-val">${plan.tasks_per_day}</div><div class="vault-stat-lbl">Tasks/day</div></div>
@@ -1551,6 +1544,13 @@ async function loadTasks() {
 
   // Plan gating info
   const plan = vaultPlansCache?.find(p => p.id === currentProfile?.vault_plan_id) || { tasks_per_day: 0, sort_order: 0, display_name: 'None', emoji: '' };
+
+  // Early bird expiry check on frontend (backend also enforces)
+  if (currentProfile?.vault_plan_id === 'early_bird' && currentProfile?.early_bird_expires_at) {
+    if (new Date(currentProfile.early_bird_expires_at) < new Date()) {
+      showAlert(alertEl, 'Your Early Bird has expired. Upgrade to a vault plan to keep earning.');
+    }
+  }
 
   // Count today's completions
   const startToday = startOfTodayISO();
@@ -1779,7 +1779,7 @@ function pollDepositStatus(reference) {
     if (tx?.status === 'completed') {
       clearInterval(timer);
       toast('Deposit credited! 💰', 'success');
-      await refreshDashboard();
+      await loadProfileAndRoute();
     } else if (tx?.status === 'failed') {
       clearInterval(timer);
       toast('Deposit failed', 'error');
@@ -1817,7 +1817,7 @@ async function submitWithdrawal() {
     if (!result.success) { showAlert(alert, result.error || 'Withdrawal failed'); return; }
     toast(result.message, 'success');
     document.getElementById('withdraw-amount').value = '';
-    await refreshDashboard();
+    await loadProfileAndRoute();
   } catch {
     setLoading(btn, false, 'Request Withdrawal');
     showAlert(alert, 'Network error');
@@ -1885,10 +1885,6 @@ function shareViaWhatsApp() {
 
 async function loadReferrals() {
   document.getElementById('ref-link-display').textContent = referralLink();
-  // Populate referral code and earnings in the referrals section
-  document.getElementById('home-ref-code').textContent = currentProfile?.referral_code || '——';
-  const r = Number(currentProfile?.referral_earnings || 0);
-  document.getElementById('ref-total-earnings').textContent = r.toLocaleString();
   const list = document.getElementById('referrals-list');
   const { data } = await sb.from('profiles').select('full_name, created_at, is_active').eq('referred_by', currentProfile.id).order('created_at', { ascending: false });
   if (!data || data.length === 0) {
@@ -1930,7 +1926,7 @@ function loadProfileView() {
   document.getElementById('prof-network').textContent = p.network || '—';
   document.getElementById('prof-ref-code').textContent = p.referral_code || '—';
   const plan = vaultPlansCache?.find(x => x.id === p.vault_plan_id);
-  document.getElementById('prof-vault-plan').textContent = plan ? `${plan.emoji || ''} ${plan.display_name}` : 'No Plan';
+  document.getElementById('prof-vault-plan').textContent = plan ? `${plan.emoji || ''} ${plan.display_name}` : 'Early Bird';
   document.getElementById('prof-joined').textContent = p.created_at ? new Date(p.created_at).toLocaleDateString() : '—';
 }
 

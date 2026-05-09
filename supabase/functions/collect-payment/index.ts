@@ -1,5 +1,5 @@
 // supabase/functions/collect-payment/index.ts
-// Free registration: creates/activates the profile and credits any referrer.
+// Initiates a 20,000 UGX registration payment via LivePay
 // Deploy: supabase functions deploy collect-payment
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -10,8 +10,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-const REFERRAL_BONUS = 4000; // UGX credited to referrer on each new registration
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -24,15 +22,22 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Authenticate the user
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return json({ error: "Unauthorized" }, 401);
+    if (!authHeader) {
+      return json({ error: "Unauthorized" }, 401);
+    }
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return json({ error: "Unauthorized" }, 401);
+
+    if (authError || !user) {
+      return json({ error: "Unauthorized" }, 401);
+    }
 
     const { fullName, phoneNumber, network, referralCode } = await req.json();
 
+    // Validate inputs
     if (!fullName || !phoneNumber || !network) {
       return json({ error: "Missing required fields" }, 400);
     }
@@ -40,20 +45,33 @@ serve(async (req) => {
       return json({ error: "Network must be MTN or AIRTEL" }, 400);
     }
 
-    // Already active — nothing to do
-    const { data: existing } = await supabase
+    // Check if user already has an active account
+    const { data: existingProfile } = await supabase
       .from("profiles")
-      .select("is_active")
+      .select("is_active, referral_code")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (existing?.is_active) {
+    if (existingProfile?.is_active) {
       return json({ error: "Account already registered" }, 400);
+    }
+
+    // Check for an already-pending registration payment
+    const { data: pendingTx } = await supabase
+      .from("transactions")
+      .select("reference")
+      .eq("user_id", user.id)
+      .eq("type", "registration")
+      .eq("status", "pending")
+      .maybeSingle();
+
+    if (pendingTx) {
+      return json({ success: true, reference: pendingTx.reference, alreadyPending: true });
     }
 
     // Resolve referrer
     let referrerId: string | null = null;
-    if (referralCode?.trim()) {
+    if (referralCode && referralCode.trim() !== "") {
       const { data: referrer } = await supabase
         .from("profiles")
         .select("id")
@@ -63,12 +81,18 @@ serve(async (req) => {
       if (referrer) referrerId = referrer.id;
     }
 
-    // Normalise phone to 256XXXXXXXXX
+    // Normalise phone number to 256XXXXXXXXX format
     let phone = phoneNumber.replace(/\D/g, "");
-    if (phone.startsWith("0")) phone = "256" + phone.slice(1);
-    else if (!phone.startsWith("256")) phone = "256" + phone;
+    if (phone.startsWith("0")) {
+      phone = "256" + phone.slice(1);
+    } else if (!phone.startsWith("256")) {
+      phone = "256" + phone;
+    }
 
-    // Upsert profile and activate immediately (registration is free)
+    // Generate a unique reference (max 30 chars, no spaces)
+    const ref = `MWREG${user.id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
+
+    // Upsert profile (trigger auto-generates referral_code on first insert)
     const { error: profileError } = await supabase.from("profiles").upsert(
       {
         id: user.id,
@@ -77,9 +101,7 @@ serve(async (req) => {
         phone_number: phone,
         network,
         referred_by: referrerId,
-        is_active: true,
-        vault_activated_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        is_active: false,
       },
       { onConflict: "id" }
     );
@@ -89,39 +111,52 @@ serve(async (req) => {
       return json({ error: "Failed to create profile" }, 500);
     }
 
-    // Record the registration (free)
-    const ref = `MWREG${user.id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
-    await supabase.from("transactions").insert({
-      user_id: user.id,
-      type: "registration",
-      amount: 0,
-      status: "completed",
-      reference: ref,
-      description: "Free Registration",
+    // ── LivePay Collect Money API ─────────────────────────────────────
+    // Endpoint confirmed working: https://livepay.me/api/collect-money
+    // Auth: single Bearer token (no separate public key)
+    const lpRes = await fetch("https://livepay.me/api/collect-money", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${Deno.env.get("LIVEPAY_API_KEY")}`,
+      },
+      body: JSON.stringify({
+        accountNumber: Deno.env.get("LIVEPAY_ACCOUNT_NUMBER"),
+        phoneNumber: phone,
+        amount: 20000,
+        currency: "UGX",
+        reference: ref,
+        description: "MW Registration",
+      }),
     });
 
-    // Credit referrer bonus
-    if (referrerId) {
-      const bonusRef = `MWBON${user.id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
+    const lpData = await lpRes.json();
 
-      await supabase.rpc("increment_category", {
-        p_user_id:  referrerId,
-        p_category: "referral_earnings",
-        p_amount:   REFERRAL_BONUS,
-      });
-
-      await supabase.from("transactions").insert({
-        user_id: referrerId,
-        type: "referral_bonus",
-        amount: REFERRAL_BONUS,
-        category: "referral_earnings",
-        status: "completed",
-        reference: bonusRef,
-        description: "Referral bonus",
-      });
+    if (!lpRes.ok || lpData.success === false) {
+      console.error("LivePay error:", lpData);
+      return json(
+        { error: lpData.error || lpData.message || "Payment initiation failed" },
+        400
+      );
     }
 
-    return json({ success: true });
+    // Store pending transaction — use LivePay's internal_reference as tx id
+    const { error: txError } = await supabase.from("transactions").insert({
+      user_id: user.id,
+      type: "registration",
+      amount: 20000,
+      status: "pending",
+      reference: ref,
+      livepay_transaction_id: lpData.internal_reference ?? null,
+      description: "MW Registration Fee",
+    });
+
+    if (txError) {
+      console.error("Transaction insert error:", txError);
+      return json({ error: "Failed to record transaction" }, 500);
+    }
+
+    return json({ success: true, reference: ref });
   } catch (err) {
     console.error("Unexpected error:", err);
     return json({ error: "Internal server error" }, 500);

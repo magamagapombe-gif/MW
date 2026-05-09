@@ -81,14 +81,23 @@ serve(async (req) => {
 
   // ── SUCCESS ───────────────────────────────────────────────────────────
   if (status === "Success") {
+    await supabase
+      .from("transactions")
+      .update({ status: "completed", livepay_transaction_id: internalRef })
+      .eq("id", transaction.id);
+
     if (transaction.type === "registration") {
-      // Activate the user (no early bird plan — user starts with no plan)
+      // Activate + assign Early Bird tier + 30 day window
+      const earlyBirdExpires = new Date();
+      earlyBirdExpires.setDate(earlyBirdExpires.getDate() + 30);
+
       await supabase
         .from("profiles")
         .update({
           is_active: true,
-          vault_plan_id: null,
+          vault_plan_id: "early_bird",
           vault_activated_at: new Date().toISOString(),
+          early_bird_expires_at: earlyBirdExpires.toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", transaction.user_id);
@@ -120,26 +129,14 @@ serve(async (req) => {
         });
       }
     } else if (transaction.type === "deposit") {
-      // Credit balance FIRST — then mark completed so the frontend
-      // poll never reads "completed" before the balance is in the DB.
-      const { error: rpcError } = await supabase.rpc("increment_category", {
+      // Credit the user's `balance` (deposit wallet)
+      await supabase.rpc("increment_category", {
         p_user_id:  transaction.user_id,
         p_category: "balance",
         p_amount:   transaction.amount,
       });
-      if (rpcError) {
-        console.error("increment_category failed for deposit:", rpcError);
-        // Don't mark completed — LivePay will retry the webhook.
-        return ok();
-      }
     }
-    // Withdrawals: already deducted at init; nothing more to do on success.
-
-    // Mark completed only after side-effects are done.
-    await supabase
-      .from("transactions")
-      .update({ status: "completed", livepay_transaction_id: internalRef })
-      .eq("id", transaction.id);
+    // Withdrawals: already deducted at init; nothing more to do on success
   }
 
   // ── FAILED ────────────────────────────────────────────────────────────
