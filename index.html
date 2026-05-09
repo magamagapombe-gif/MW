@@ -400,8 +400,8 @@ body::before {
   padding-bottom: env(safe-area-inset-bottom);
 }
 .nav-item {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 10px 4px 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 2px 8px; font-size: 9px; font-weight: 600; letter-spacing: 0.03em;
   text-transform: uppercase; color: var(--text-3); transition: color 0.18s;
 }
 .nav-item.active { color: var(--lime); }
@@ -811,19 +811,11 @@ body::before {
         </div>
       </div>
 
-      <!-- Referral card -->
-      <div class="card card-accent" style="margin-top:6px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <div>
-            <div style="font-weight:700;font-size:15px;">🔗 Your Referral</div>
-            <div style="font-size:12px;color:var(--text-2);margin-top:2px;">UGX 4,000 per referral</div>
-          </div>
-        </div>
-        <div id="home-ref-code" style="font-family:'DM Mono',monospace;font-size:24px;font-weight:600;color:var(--lime);letter-spacing:0.08em;margin-bottom:12px;">——</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <button class="btn btn-ghost btn-sm" onclick="copyReferralLink()">📋 Copy Link</button>
-          <button class="btn btn-ghost btn-sm" onclick="shareViaWhatsApp()">📱 WhatsApp</button>
-        </div>
+      <!-- Quick actions -->
+      <div style="font-family:'Sora',sans-serif;font-size:13px;font-weight:700;color:var(--text-2);margin:20px 0 10px;letter-spacing:0.04em;text-transform:uppercase;">Quick Actions</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="showSection('referrals')">🔗 My Referral Link</button>
+        <button class="btn btn-ghost btn-sm" onclick="showSection('tasks')">✅ View Tasks</button>
       </div>
     </div>
 
@@ -871,12 +863,14 @@ body::before {
         <div class="balance-value" id="ref-total-earnings" style="font-size:32px;">0</div>
         <div class="balance-currency">UGX</div>
       </div>
-      <div class="card">
-        <div style="font-weight:700;margin-bottom:10px;">🔗 Your Referral Link</div>
+      <div class="card card-accent">
+        <div style="font-weight:700;font-size:15px;margin-bottom:6px;">🔑 Your Referral Code</div>
+        <div id="home-ref-code" style="font-family:'DM Mono',monospace;font-size:28px;font-weight:700;color:var(--lime);letter-spacing:0.1em;margin-bottom:14px;">——</div>
+        <div style="font-weight:700;margin-bottom:8px;font-size:13px;color:var(--text-2);">🔗 Referral Link</div>
         <div class="ref-link-box" id="ref-link-display">Loading…</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-          <button class="btn btn-primary btn-sm" onclick="copyReferralLink()">Copy Link</button>
-          <button class="btn btn-secondary btn-sm" onclick="shareViaWhatsApp()">Share</button>
+          <button class="btn btn-primary btn-sm" onclick="copyReferralLink()">📋 Copy Link</button>
+          <button class="btn btn-secondary btn-sm" onclick="shareViaWhatsApp()">📱 WhatsApp</button>
         </div>
       </div>
       <div class="card">
@@ -1002,6 +996,7 @@ body::before {
     <button class="nav-item active" data-section="home"      onclick="showSection('home')"><span class="nav-item-icon">🏠</span>Home</button>
     <button class="nav-item"        data-section="vault"     onclick="showSection('vault')"><span class="nav-item-icon">💎</span>Vault</button>
     <button class="nav-item"        data-section="tasks"     onclick="showSection('tasks')"><span class="nav-item-icon">✅</span>Tasks</button>
+    <button class="nav-item"        data-section="referrals" onclick="showSection('referrals')"><span class="nav-item-icon">🔗</span>Refer</button>
     <button class="nav-item"        data-section="wallet"    onclick="showSection('wallet')"><span class="nav-item-icon">💰</span>Wallet</button>
     <button class="nav-item"        data-section="profile"   onclick="showSection('profile')"><span class="nav-item-icon">👤</span>Profile</button>
   </nav>
@@ -1272,6 +1267,8 @@ async function doActivate(btn, alert) {
     const result = await res.json();
     setLoading(btn, false, 'Activate Account →');
     if (!result.success) { showAlert(alert, result.error || 'Activation failed'); return; }
+    // Optimistically mark active so routing doesn't loop back to register
+    if (currentProfile) currentProfile.is_active = true;
     toast('Account activated! Welcome 🎉', 'success');
     await loadProfileAndRoute();
   } catch {
@@ -1319,21 +1316,49 @@ async function loadProfileAndRoute() {
   const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
   currentProfile = profile;
   regData.email = currentUser.email || '';
-  if (profile) {
-    regData.fullName = profile.full_name || '';
-    regData.phone = profile.phone_number || '';
-    regData.network = profile.network || '';
-  }
+
   if (!profile) {
+    // No profile yet — need name from user
     if (!regData.fullName) {
       const name = prompt('Please enter your full name:');
       if (!name?.trim()) { await handleLogout(); return; }
       regData.fullName = name.trim();
     }
     showPage('register');
+    // Reset to step 1
+    document.getElementById('reg-step-1').classList.remove('hidden');
+    document.getElementById('reg-step-2').classList.add('hidden');
+    document.getElementById('reg-progress-fill').style.width = '33%';
+    document.getElementById('reg-step-title').textContent = 'Phone Number';
+    document.getElementById('reg-step-sub').textContent = 'Enter your mobile money number';
     return;
   }
-  if (!profile.is_active) { showPage('register'); return; }
+
+  // Always sync regData from the profile so doActivate never hits "Missing info"
+  regData.fullName = profile.full_name || regData.fullName || '';
+  regData.phone    = profile.phone_number || '';
+  regData.network  = profile.network || '';
+
+  if (!profile.is_active) {
+    // Profile exists but not yet activated — go to step 2 (referral/activate)
+    showPage('register');
+    if (regData.phone && regData.network) {
+      // Phone already saved — skip to step 2
+      document.getElementById('reg-step-1').classList.add('hidden');
+      document.getElementById('reg-step-2').classList.remove('hidden');
+      document.getElementById('reg-progress-fill').style.width = '66%';
+      document.getElementById('reg-step-title').textContent = 'Referral Code';
+      document.getElementById('reg-step-sub').textContent = 'Optional — enter if someone invited you';
+    } else {
+      document.getElementById('reg-step-1').classList.remove('hidden');
+      document.getElementById('reg-step-2').classList.add('hidden');
+      document.getElementById('reg-progress-fill').style.width = '33%';
+      document.getElementById('reg-step-title').textContent = 'Phone Number';
+      document.getElementById('reg-step-sub').textContent = 'Enter your mobile money number';
+    }
+    return;
+  }
+
   await loadDashboard();
   showPage('dashboard');
 }
@@ -1380,9 +1405,6 @@ async function loadDashboard() {
   // Referral count
   const { count: refCount } = await sb.from('profiles').select('id', { count: 'exact', head: true }).eq('referred_by', currentProfile.id);
   document.getElementById('stat-referrals').textContent = refCount || 0;
-
-  // Referral earnings total (separate from current balance)
-  document.getElementById('ref-total-earnings').textContent = r.toLocaleString();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1844,6 +1866,10 @@ function shareViaWhatsApp() {
 
 async function loadReferrals() {
   document.getElementById('ref-link-display').textContent = referralLink();
+  // Populate referral code and earnings in the referrals section
+  document.getElementById('home-ref-code').textContent = currentProfile?.referral_code || '——';
+  const r = Number(currentProfile?.referral_earnings || 0);
+  document.getElementById('ref-total-earnings').textContent = r.toLocaleString();
   const list = document.getElementById('referrals-list');
   const { data } = await sb.from('profiles').select('full_name, created_at, is_active').eq('referred_by', currentProfile.id).order('created_at', { ascending: false });
   if (!data || data.length === 0) {
