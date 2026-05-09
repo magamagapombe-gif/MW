@@ -8,7 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const WEBHOOK_URL    = Deno.env.get("LIVEPAY_WEBHOOK_URL") ?? "";
 const WEBHOOK_SECRET = Deno.env.get("LIVEPAY_WEBHOOK_SECRET") ?? "";
 
-const REFERRAL_BONUS = 4000;
+const REFERRAL_BONUS = 4000; // UGX for first-level referrer on registration
 
 serve(async (req) => {
   if (req.method !== "POST") {
@@ -23,8 +23,6 @@ serve(async (req) => {
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400 });
   }
-
-  console.log("LivePay webhook payload:", JSON.stringify(payload));
 
   // ── Signature verification ────────────────────────────────────────────
   if (WEBHOOK_SECRET && WEBHOOK_URL) {
@@ -51,7 +49,7 @@ serve(async (req) => {
     const expectedSig = await hmacSha256Hex(WEBHOOK_SECRET, stringToSign);
 
     if (expectedSig !== receivedSig) {
-      console.warn("Signature mismatch — expected:", expectedSig, "got:", receivedSig);
+      console.warn("Signature mismatch");
       return new Response(JSON.stringify({ error: "Invalid signature" }), { status: 401 });
     }
   }
@@ -61,68 +59,41 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  // ── BUG FIX: normalize status to lowercase for comparison ────────────
-  // LivePay may send "Success", "SUCCESS", "SUCCESSFUL", "success", etc.
-  const rawStatus   = String(payload.status ?? "");
-  const statusLower = rawStatus.toLowerCase();
-  const isSuccess   = ["success", "successful", "completed", "paid"].includes(statusLower);
-  const isFailed    = ["failed", "failure", "cancelled", "canceled", "rejected", "expired"].includes(statusLower);
-
-  console.log("Status received:", rawStatus, "→ isSuccess:", isSuccess, "isFailed:", isFailed);
-
+  const status = String(payload.status ?? "");
   const customerRef = String(payload.customer_reference ?? "");
   const internalRef = String(payload.internal_reference ?? "");
 
-  if (!customerRef) {
-    console.warn("No customer_reference in payload");
-    return ok();
-  }
+  if (!customerRef) return ok();
 
-  const { data: transaction, error: txFetchErr } = await supabase
+  const { data: transaction } = await supabase
     .from("transactions")
     .select("id, user_id, type, amount, status, category")
     .eq("reference", customerRef)
     .maybeSingle();
-
-  if (txFetchErr) {
-    console.error("DB error fetching transaction:", txFetchErr.message);
-    return ok();
-  }
 
   if (!transaction) {
     console.warn("Unknown reference:", customerRef);
     return ok();
   }
 
-  // Idempotency — already processed
-  if (transaction.status !== "pending") {
-    console.log("Transaction already processed:", transaction.status);
-    return ok();
-  }
+  // Idempotency
+  if (transaction.status !== "pending") return ok();
 
   // ── SUCCESS ───────────────────────────────────────────────────────────
-  if (isSuccess) {
-    await supabase
-      .from("transactions")
-      .update({ status: "completed", livepay_transaction_id: internalRef })
-      .eq("id", transaction.id);
-
+  if (status === "Success") {
     if (transaction.type === "registration") {
-      const earlyBirdExpires = new Date();
-      earlyBirdExpires.setDate(earlyBirdExpires.getDate() + 30);
-
+      // Activate the user (no early bird plan — user starts with no plan)
       await supabase
         .from("profiles")
         .update({
           is_active: true,
-          vault_plan_id: "early_bird",
+          vault_plan_id: null,
           vault_activated_at: new Date().toISOString(),
-          early_bird_expires_at: earlyBirdExpires.toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", transaction.user_id);
 
-      // Credit referrer
+      // Credit referrer (goes to referral_earnings, NOT balance)
       const { data: profile } = await supabase
         .from("profiles")
         .select("referred_by")
@@ -132,17 +103,11 @@ serve(async (req) => {
       if (profile?.referred_by) {
         const bonusRef = `MWBON${transaction.user_id.replace(/-/g, "").slice(0, 10)}${Date.now()}`.slice(0, 30);
 
-        // Try RPC first, fall back to direct update
-        const { error: rpcErr } = await supabase.rpc("increment_category", {
+        await supabase.rpc("increment_category", {
           p_user_id:  profile.referred_by,
           p_category: "referral_earnings",
           p_amount:   REFERRAL_BONUS,
         });
-
-        if (rpcErr) {
-          console.warn("increment_category RPC failed, using direct update:", rpcErr.message);
-          await incrementDirect(supabase, profile.referred_by, "referral_earnings", REFERRAL_BONUS);
-        }
 
         await supabase.from("transactions").insert({
           user_id: profile.referred_by,
@@ -154,85 +119,51 @@ serve(async (req) => {
           description: "Referral bonus",
         });
       }
-
     } else if (transaction.type === "deposit") {
-      // Try RPC first, fall back to direct update
-      const { error: rpcErr } = await supabase.rpc("increment_category", {
+      // Credit balance FIRST — then mark completed so the frontend
+      // poll never reads "completed" before the balance is in the DB.
+      const { error: rpcError } = await supabase.rpc("increment_category", {
         p_user_id:  transaction.user_id,
         p_category: "balance",
         p_amount:   transaction.amount,
       });
-
-      if (rpcErr) {
-        console.warn("increment_category RPC failed, using direct update:", rpcErr.message);
-        await incrementDirect(supabase, transaction.user_id, "balance", transaction.amount);
+      if (rpcError) {
+        console.error("increment_category failed for deposit:", rpcError);
+        // Don't mark completed — LivePay will retry the webhook.
+        return ok();
       }
     }
+    // Withdrawals: already deducted at init; nothing more to do on success.
 
-    console.log("Successfully processed:", transaction.type, "ref:", customerRef);
+    // Mark completed only after side-effects are done.
+    await supabase
+      .from("transactions")
+      .update({ status: "completed", livepay_transaction_id: internalRef })
+      .eq("id", transaction.id);
   }
 
   // ── FAILED ────────────────────────────────────────────────────────────
-  if (isFailed) {
+  if (status === "Failed") {
     const reason = String(payload.message ?? "Payment failed");
     await supabase
       .from("transactions")
       .update({ status: "failed", livepay_transaction_id: internalRef, description: reason })
       .eq("id", transaction.id);
 
-    // Refund balance if withdrawal failed
+    // Refund balance if a withdrawal failed
     if (transaction.type === "withdrawal" && transaction.category) {
-      const { error: rpcErr } = await supabase.rpc("increment_category", {
+      await supabase.rpc("increment_category", {
         p_user_id:  transaction.user_id,
         p_category: transaction.category,
         p_amount:   transaction.amount,
       });
-
-      if (rpcErr) {
-        await incrementDirect(supabase, transaction.user_id, transaction.category, transaction.amount);
-      }
     }
-
-    console.log("Marked failed:", customerRef, reason);
-  }
-
-  if (!isSuccess && !isFailed) {
-    console.warn("Unrecognized status:", rawStatus, "— no action taken");
+    // Deposits: nothing to refund (user was never charged successfully)
+    // Registration: user stays inactive
   }
 
   return ok();
 });
-
-// ── Direct balance increment (fallback when RPC missing) ─────────────
-async function incrementDirect(
-  supabase: ReturnType<typeof createClient>,
-  userId: string,
-  field: string,
-  amount: number
-) {
-  const { data: prof, error } = await supabase
-    .from("profiles")
-    .select(field)
-    .eq("id", userId)
-    .single();
-
-  if (error || !prof) {
-    console.error("incrementDirect: could not fetch profile:", error?.message);
-    return;
-  }
-
-  const current = (prof as Record<string, number>)[field] ?? 0;
-  const { error: updateErr } = await supabase
-    .from("profiles")
-    .update({ [field]: current + amount, updated_at: new Date().toISOString() })
-    .eq("id", userId);
-
-  if (updateErr) {
-    console.error("incrementDirect: update failed:", updateErr.message);
-  } else {
-    console.log(`incrementDirect: ${field} +${amount} for user ${userId} (${current} → ${current + amount})`);
-  }
-}
 
 async function hmacSha256Hex(secret: string, message: string): Promise<string> {
   const key = await crypto.subtle.importKey(
