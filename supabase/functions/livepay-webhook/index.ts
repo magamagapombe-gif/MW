@@ -59,11 +59,21 @@ serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
-  const status = String(payload.status ?? "");
-  const customerRef = String(payload.customer_reference ?? "");
-  const internalRef = String(payload.internal_reference ?? "");
+  // LivePay may use different field names — handle both
+  const status = String(payload.status ?? payload.Status ?? "");
+  const customerRef = String(
+    payload.customer_reference ?? payload.customerReference ?? payload.reference ?? ""
+  );
+  const internalRef = String(
+    payload.internal_reference ?? payload.internalReference ?? payload.transactionId ?? ""
+  );
 
-  if (!customerRef) return ok();
+  console.log("Webhook received:", JSON.stringify({ status, customerRef, internalRef, payload }));
+
+  if (!customerRef) {
+    console.warn("No customer reference in payload:", JSON.stringify(payload));
+    return ok();
+  }
 
   const { data: transaction } = await supabase
     .from("transactions")
@@ -87,17 +97,12 @@ serve(async (req) => {
       .eq("id", transaction.id);
 
     if (transaction.type === "registration") {
-      // Activate + assign Early Bird tier + 30 day window
-      const earlyBirdExpires = new Date();
-      earlyBirdExpires.setDate(earlyBirdExpires.getDate() + 30);
-
+      // Activate the account (no early bird plan)
       await supabase
         .from("profiles")
         .update({
           is_active: true,
-          vault_plan_id: "early_bird",
           vault_activated_at: new Date().toISOString(),
-          early_bird_expires_at: earlyBirdExpires.toISOString(),
           updated_at: new Date().toISOString(),
         })
         .eq("id", transaction.user_id);

@@ -48,7 +48,7 @@ serve(async (req) => {
       .single();
 
     if (!profile) return json({ error: "Profile not found" }, 404);
-    if (!profile.is_active) return json({ error: "Complete registration first" }, 403);
+    // Note: inactive users CAN deposit (to build balance for activation/investment)
 
     // Check for pending deposit (prevent spam)
     const { data: pending } = await supabase

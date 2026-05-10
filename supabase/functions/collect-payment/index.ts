@@ -1,5 +1,5 @@
 // supabase/functions/collect-payment/index.ts
-// Initiates a 20,000 UGX registration payment via LivePay
+// Initiates a 10,000 UGX registration payment via LivePay
 // Deploy: supabase functions deploy collect-payment
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
@@ -123,7 +123,7 @@ serve(async (req) => {
       body: JSON.stringify({
         accountNumber: Deno.env.get("LIVEPAY_ACCOUNT_NUMBER"),
         phoneNumber: phone,
-        amount: 20000,
+        amount: 10000,
         currency: "UGX",
         reference: ref,
         description: "MW Registration",
@@ -144,7 +144,7 @@ serve(async (req) => {
     const { error: txError } = await supabase.from("transactions").insert({
       user_id: user.id,
       type: "registration",
-      amount: 20000,
+      amount: 10000,
       status: "pending",
       reference: ref,
       livepay_transaction_id: lpData.internal_reference ?? null,

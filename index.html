@@ -550,7 +550,7 @@ body::before {
   <div class="landing-hero">
     <div class="landing-kicker">🇺🇬 Uganda's Referral Platform</div>
     <h1 class="landing-title">Earn <span class="hl">UGX 4,000</span> for every friend you refer</h1>
-    <p class="landing-sub">Register once for UGX 20,000. Share your link. Get paid instantly to your mobile money wallet every time someone joins.</p>
+    <p class="landing-sub">Register once for UGX 10,000. Share your link. Get paid instantly to your mobile money wallet every time someone joins.</p>
   </div>
   <div class="landing-cta">
     <button class="btn btn-primary btn-lg" onclick="showPage('auth','register')">Get Started Free →</button>
@@ -591,7 +591,7 @@ body::before {
     <p class="landing-section-sub">Simple three-step process to start earning</p>
     <div class="step">
       <div class="step-num">01</div>
-      <div><div class="step-title">Register with Mobile Money</div><div class="step-desc">Pay UGX 20,000 one-time activation via MTN MoMo or Airtel Money.</div></div>
+      <div><div class="step-title">Register with Mobile Money</div><div class="step-desc">Pay UGX 10,000 one-time activation via MTN MoMo or Airtel Money.</div></div>
     </div>
     <div class="step">
       <div class="step-num">02</div>
@@ -712,7 +712,7 @@ body::before {
       <div id="reg-step3-alert" class="alert alert-error hidden"></div>
       <div class="card card-accent" style="margin-bottom:18px;">
         <div style="text-align:center;margin-bottom:14px;">
-          <div class="balance-value" style="color:var(--lime);">UGX 20,000</div>
+          <div class="balance-value" style="color:var(--lime);">UGX 10,000</div>
           <div class="balance-currency">One-time Activation Fee</div>
         </div>
         <p style="font-size:13px;color:var(--text-2);text-align:center;line-height:1.5;">
@@ -720,11 +720,11 @@ body::before {
         </p>
       </div>
       <div class="card" style="margin-bottom:14px;">
-        <div class="info-row"><span class="info-label">Activation fee</span><span class="info-val">UGX 20,000</span></div>
+        <div class="info-row"><span class="info-label">Activation fee</span><span class="info-val">UGX 10,000</span></div>
         <div class="info-row"><span class="info-label">Network</span><span class="info-val" id="pay-network-display">—</span></div>
         <div class="info-row"><span class="info-label">Referral code</span><span class="info-val" id="pay-referral-display">—</span></div>
       </div>
-      <button class="btn btn-primary btn-full btn-lg" id="pay-btn" onclick="initiatePayment()">Pay UGX 20,000 via Mobile Money</button>
+      <button class="btn btn-primary btn-full btn-lg" id="pay-btn" onclick="initiatePayment()">Pay UGX 10,000 via Mobile Money</button>
     </div>
   </div>
 </div>
@@ -1200,6 +1200,8 @@ async function handleSignup(e) {
 
 async function handleLogout() {
   clearInterval(pollTimer);
+  if (_profileChannel) { sb.removeChannel(_profileChannel); _profileChannel = null; }
+  if (_depositChannel) { sb.removeChannel(_depositChannel); _depositChannel = null; }
   await sb.auth.signOut();
   currentUser = null;
   currentProfile = null;
@@ -1299,13 +1301,13 @@ async function initiatePayment() {
       }),
     });
     const result = await res.json();
-    setLoading(btn, false, 'Pay UGX 20,000 via Mobile Money');
+    setLoading(btn, false, 'Pay UGX 10,000 via Mobile Money');
     if (!result.success) { showAlert(alert, result.error || 'Payment initiation failed'); return; }
     document.getElementById('pending-phone-display').textContent = regData.phone;
     showPage('pending');
     startPolling(result.reference);
   } catch (err) {
-    setLoading(btn, false, 'Pay UGX 20,000 via Mobile Money');
+    setLoading(btn, false, 'Pay UGX 10,000 via Mobile Money');
     showAlert(alert, 'Network error. Please try again.');
   }
 }
@@ -1364,7 +1366,8 @@ async function loadProfileAndRoute() {
     showPage('register');
     return;
   }
-  if (!profile.is_active) { showPage('register'); return; }
+  // Inactive users can now see the dashboard (but tasks/vault/sacco remain gated)
+  setupProfileRealtime(); // real-time balance updates
   await loadDashboard();
   showPage('dashboard');
 }
@@ -1395,9 +1398,26 @@ async function loadDashboard() {
   // Active badge
   document.getElementById('active-badge').classList.toggle('hidden', !currentProfile.is_active);
 
-  // Show activate banner if on Early Bird still
-  const showBanner = currentProfile.is_active && (currentProfile.vault_plan_id === 'early_bird' || !currentProfile.vault_plan_id);
-  document.getElementById('activate-banner').classList.toggle('hidden', !showBanner);
+  // Show activation banner: for inactive users prompt activation, for active early bird prompt upgrade
+  const banner = document.getElementById('activate-banner');
+  const bannerTitle = banner.querySelector('.activate-banner-title');
+  const bannerSub = banner.querySelector('.activate-banner-sub');
+  const bannerBtn = banner.querySelector('button');
+  if (!currentProfile.is_active) {
+    bannerTitle.textContent = '⚡ Activate Your Account';
+    bannerSub.textContent = 'Pay UGX 10,000 once to unlock tasks, vault investments, and withdrawals.';
+    bannerBtn.textContent = 'Activate Now';
+    bannerBtn.onclick = () => showPage('register');
+    banner.classList.remove('hidden');
+  } else if (currentProfile.vault_plan_id === 'early_bird' || !currentProfile.vault_plan_id) {
+    bannerTitle.textContent = 'Boost your earnings';
+    bannerSub.textContent = 'Buy a vault plan to unlock more daily tasks and higher rewards.';
+    bannerBtn.textContent = 'Upgrade';
+    bannerBtn.onclick = () => showSection('vault');
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
 
   // Plan name
   const plan = vaultPlansCache?.find(p => p.id === currentProfile.vault_plan_id);
@@ -1433,8 +1453,10 @@ async function loadVaultPlans() {
   const wallet = Number(currentProfile?.balance || 0);
 
   vaultPlansCache.forEach(plan => {
+    // Skip the early_bird plan from display entirely
+    if (plan.id === 'early_bird') return;
     const isOwned  = currentProfile?.vault_plan_id === plan.id;
-    const isEarly  = plan.id === 'early_bird';
+    const isEarly  = false; // early bird removed
     const isLower  = plan.sort_order <= currentOrder && !isOwned;
     const canAfford = wallet >= plan.price;
 
@@ -1546,9 +1568,9 @@ async function loadTasks() {
   const plan = vaultPlansCache?.find(p => p.id === currentProfile?.vault_plan_id) || { tasks_per_day: 0, sort_order: 0, display_name: 'None', emoji: '' };
 
   // Early bird expiry check on frontend (backend also enforces)
-  if (currentProfile?.vault_plan_id === 'early_bird' && currentProfile?.early_bird_expires_at) {
-    if (new Date(currentProfile.early_bird_expires_at) < new Date()) {
-      showAlert(alertEl, 'Your Early Bird has expired. Upgrade to a vault plan to keep earning.');
+  if (false) { // early bird logic removed
+    if (false) {
+      showAlert(alertEl, 'Upgrade to a vault plan to keep earning.');
     }
   }
 
@@ -1724,8 +1746,9 @@ function escapeHtml(s) {
 //  WALLET — DEPOSIT / WITHDRAW / HISTORY
 // ════════════════════════════════════════════════════════════
 function showWalletTab(tab) {
-  if (!currentProfile?.is_active && (tab === 'deposit' || tab === 'withdraw')) {
-    toast('Activate your account first', 'warning');
+  // Deposit is allowed for all users (even inactive) so they can fund their wallet
+  if (!currentProfile?.is_active && tab === 'withdraw') {
+    toast('Activate your account to withdraw', 'warning');
     return;
   }
   document.querySelectorAll('#section-wallet .tab-btn').forEach(b => b.classList.remove('active'));
@@ -1769,22 +1792,76 @@ async function submitDeposit() {
   }
 }
 
+// Active realtime subscription handles for cleanup
+let _depositChannel = null;
+let _profileChannel = null;
+
+function setupProfileRealtime() {
+  // Tear down old subscription if any
+  if (_profileChannel) { sb.removeChannel(_profileChannel); _profileChannel = null; }
+  if (!currentUser) return;
+
+  _profileChannel = sb
+    .channel('profile-balance-' + currentUser.id)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'profiles',
+      filter: `id=eq.${currentUser.id}`,
+    }, async () => {
+      // Silently refresh profile & dashboard balances
+      const { data: profile } = await sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+      if (profile) {
+        currentProfile = profile;
+        await loadDashboard();
+      }
+    })
+    .subscribe();
+}
+
 function pollDepositStatus(reference) {
+  // Subscribe to this specific transaction for instant feedback
+  if (_depositChannel) { sb.removeChannel(_depositChannel); _depositChannel = null; }
+
+  _depositChannel = sb
+    .channel('deposit-tx-' + reference)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'transactions',
+      filter: `reference=eq.${reference}`,
+    }, async (payload) => {
+      const status = payload.new?.status;
+      if (status === 'completed') {
+        sb.removeChannel(_depositChannel); _depositChannel = null;
+        toast('Deposit credited! 💰', 'success');
+        await loadProfileAndRoute();
+      } else if (status === 'failed') {
+        sb.removeChannel(_depositChannel); _depositChannel = null;
+        const reason = payload.new?.description || 'Payment failed';
+        toast(`Deposit failed: ${reason}`, 'error');
+      }
+    })
+    .subscribe();
+
+  // Fallback poll — catches cases where the webhook fires before subscription is ready
   let attempts = 0;
-  const MAX = 40;
+  const MAX = 20; // 60 sec fallback window
   const timer = setInterval(async () => {
     attempts++;
     if (attempts > MAX) { clearInterval(timer); return; }
-    const { data: tx } = await sb.from('transactions').select('status').eq('reference', reference).maybeSingle();
+    const { data: tx } = await sb.from('transactions').select('status, description').eq('reference', reference).maybeSingle();
     if (tx?.status === 'completed') {
       clearInterval(timer);
+      if (_depositChannel) { sb.removeChannel(_depositChannel); _depositChannel = null; }
       toast('Deposit credited! 💰', 'success');
       await loadProfileAndRoute();
     } else if (tx?.status === 'failed') {
       clearInterval(timer);
-      toast('Deposit failed', 'error');
+      if (_depositChannel) { sb.removeChannel(_depositChannel); _depositChannel = null; }
+      toast(`Deposit failed: ${tx?.description || 'Payment failed'}`, 'error');
     }
-  }, 3000);
+  }, 5000);
 }
 
 function updateWithdrawCategoryBalance() {
@@ -1892,15 +1969,40 @@ async function loadReferrals() {
     list.innerHTML = '<div class="empty-icon">🌱</div><div class="empty-text">No referrals yet.<br/>Share your link to start earning.</div>';
     return;
   }
+
+  const active  = data.filter(r => r.is_active).length;
+  const pending = data.filter(r => !r.is_active).length;
+
+  // Summary strip
+  const summaryHtml = `
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:100px;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:700;color:var(--lime);">${active}</div>
+        <div style="font-size:11px;color:var(--text-2);">Active</div>
+      </div>
+      <div style="flex:1;min-width:100px;background:var(--surface-2);border-radius:10px;padding:10px 12px;text-align:center;">
+        <div style="font-size:20px;font-weight:700;color:var(--gold);">${pending}</div>
+        <div style="font-size:11px;color:var(--text-2);">Pending activation</div>
+      </div>
+    </div>
+    ${pending > 0 ? `<div style="background:rgba(255,193,7,.12);border:1px solid rgba(255,193,7,.25);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--gold);line-height:1.5;">
+      💡 <strong>${pending} referral${pending>1?'s':''}</strong> signed up but haven't paid the activation fee yet.
+      Follow up with them — you earn UGX 4,000 for each one that activates.
+    </div>` : ''}
+  `;
+
   list.className = '';
-  list.innerHTML = data.map(r => {
-    const status = r.is_active ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-warning">Pending</span>';
+  list.innerHTML = summaryHtml + data.map(r => {
+    const status = r.is_active
+      ? '<span class="badge badge-success">Active ✓</span>'
+      : '<span class="badge badge-warning">Pending payment</span>';
     const d = new Date(r.created_at).toLocaleDateString();
+    const earning = r.is_active ? '<span style="font-size:11px;color:var(--lime);">+4,000 earned</span>' : '<span style="font-size:11px;color:var(--text-3);">awaiting activation</span>';
     return `<div class="history-item">
       <div class="history-icon">👤</div>
       <div class="history-body">
         <div class="history-title">${r.full_name} ${status}</div>
-        <div class="history-date">${d}</div>
+        <div class="history-date">${d} · ${earning.replace(/"/g, "\"")}</div>
       </div>
     </div>`;
   }).join('');

@@ -197,14 +197,31 @@ th { color:var(--text-2); font-weight:700; font-size:11px; text-transform:upperc
 
     <!-- ─── TRANSACTIONS ─── -->
     <section id="section-transactions" class="section hidden">
-      <div class="search-bar">
-        <select id="tx-status-filter" class="input" style="width:auto;" onchange="loadTransactions()">
-          <option value="">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-        </select>
-        <button class="btn btn-secondary btn-sm" onclick="loadTransactions()">Filter</button>
+      <!-- Stuck payment alert banner -->
+      <div id="stuck-alert" class="hidden" style="background:rgba(255,80,80,.12);border:1px solid rgba(255,80,80,.3);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:22px;">⚠️</span>
+        <div style="flex:1;">
+          <div style="font-weight:700;color:#ff5050;font-size:14px;">Stuck Payments Detected</div>
+          <div id="stuck-alert-msg" style="font-size:12px;color:var(--text-2);margin-top:2px;"></div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="clearStuckPendings()">Fix Now</button>
+      </div>
+      <div class="search-bar" style="justify-content:space-between;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="tx-status-filter" class="input" style="width:auto;" onchange="loadTransactions()">
+            <option value="">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="loadTransactions()">↻ Refresh</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <label style="font-size:12px;color:var(--text-2);">
+            <input type="checkbox" id="tx-autorefresh" onchange="toggleTxAutoRefresh()" style="margin-right:4px;">
+            Auto-refresh (30s)
+          </label>
+        </div>
       </div>
       <div class="card scroll-x" style="padding:0;">
         <table>
@@ -514,10 +531,35 @@ async function openForceActivate(userId, name) {
 }
 
 // ── TRANSACTIONS ──
+let _txAutoRefreshTimer = null;
+function toggleTxAutoRefresh() {
+  const on = document.getElementById('tx-autorefresh').checked;
+  if (_txAutoRefreshTimer) { clearInterval(_txAutoRefreshTimer); _txAutoRefreshTimer = null; }
+  if (on) { _txAutoRefreshTimer = setInterval(loadTransactions, 30000); }
+}
+
+async function checkStuckPayments() {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data } = await sb.from('transactions')
+    .select('id, type, amount, created_at')
+    .eq('status', 'pending')
+    .lt('created_at', fiveMinAgo);
+  const alert = document.getElementById('stuck-alert');
+  const msg   = document.getElementById('stuck-alert-msg');
+  if (data && data.length > 0) {
+    const total = data.reduce((s, t) => s + Number(t.amount), 0);
+    msg.textContent = `${data.length} transaction${data.length > 1 ? 's' : ''} pending for >5 min — UGX ${total.toLocaleString()} at risk. Webhook may not be firing.`;
+    alert.classList.remove('hidden');
+  } else {
+    alert.classList.add('hidden');
+  }
+}
+
 async function loadTransactions() {
   const tbody = document.getElementById('tx-tbody');
   tbody.innerHTML = '<tr><td colspan="9" class="empty"><span class="spinner"></span></td></tr>';
   const status = document.getElementById('tx-status-filter').value;
+  checkStuckPayments(); // runs in parallel
   const { data, error } = await sb.rpc('admin_list_transactions', { p_limit: 200, p_offset: 0, p_status: status || null });
   if (error) { tbody.innerHTML = `<tr><td colspan="9" class="empty">${error.message}</td></tr>`; return; }
   if (!data?.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No transactions.</td></tr>'; return; }
